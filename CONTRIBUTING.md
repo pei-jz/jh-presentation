@@ -22,3 +22,11 @@ npm test         # needs Chrome or Edge
   documented in `docs/edit-protocol.md`.
 - Add a test for every bug fix (`tests/*.test.mjs`, Node's built-in test runner).
 - Code comments in this repository are mostly Japanese; match the file you are editing.
+
+## Releasing (maintainers)
+
+1. Bump the version in `package.json` and both `version` fields of `server.json`, run `npm install --package-lock-only`,
+   and add a `CHANGELOG.md` entry.
+2. Commit, push and wait for CI to pass.
+3. Publish a GitHub release whose tag is `v<version>` (for example `gh release create v0.5.3 --generate-notes`).
+   The `Publish` workflow tests the tag, then publishes to npm (Trusted Publishing, with provenance) and the MCP Registry.

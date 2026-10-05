@@ -1,14 +1,14 @@
 name: Publish
 
 # GitHub でリリースを公開すると、npm と MCP Registry に公開する
-#   事前準備: リポジトリの Secrets に NPM_TOKEN (npm の Automation / Granular トークン) を登録する
+#   npm は Trusted Publishing (トークン不要)。npmjs.com のパッケージ設定で、このリポジトリの publish.yml を登録済み
 on:
   release:
     types: [published]
 
 permissions:
   contents: read
-  id-token: write   # npm provenance と MCP Registry の GitHub OIDC 認証に必要
+  id-token: write   # npm の Trusted Publishing と MCP Registry の GitHub OIDC 認証に必要
 
 jobs:
   publish:
@@ -19,6 +19,8 @@ jobs:
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
+      - name: Update npm (Trusted Publishing には npm 11.5.1 以降が必要)
+        run: npm install -g npm@latest
       - name: Install CJK fonts
         run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
       - run: npm ci
@@ -26,9 +28,7 @@ jobs:
         run: test "v$(node -p "require('./package.json').version")" = "${GITHUB_REF_NAME}"
       - run: npm test
       - name: Publish to npm
-        run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public   # provenance は Trusted Publishing で自動的に付く
       - name: Publish to MCP Registry
         run: |
           curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
