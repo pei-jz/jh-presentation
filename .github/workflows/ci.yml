@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: test (${{ matrix.os }}, node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      # 日本語の見本デッキを正しく描画・検査するためのフォント (Chrome は各ランナーに入っている)
+      - name: Install CJK fonts (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
+      - run: npm ci
+      - name: Versions in package.json and server.json match
+        run: node -e "const p=require('./package.json'),s=require('./server.json');if(p.version!==s.version||s.packages[0].version!==p.version||p.mcpName!==s.name){console.error('version/name mismatch');process.exit(1)}"
+      - run: npm test

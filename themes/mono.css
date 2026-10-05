@@ -1,0 +1,79 @@
+/* @theme mono
+ * @label モノクロ
+ * @description 白黒に赤一色のミニマルなデザイン。見出しは明朝体。文字・メッセージを主役にしたい発表向け
+ * @tags ミニマル, シンプル, 文字中心, 上品
+ */
+
+/* default.css の後に重ねて読み込む */
+:root {
+  --bg: #ffffff;
+  --fg: #111111;
+  --muted: #6b6b6b;
+  --surface: #f5f5f5;
+  --surface-2: #ebebeb;
+  --border: #dddddd;
+  --accent: #111111;
+  --accent-2: #555555;
+  --accent-3: #d7263d;
+  --accent-soft: rgba(0, 0, 0, .05);
+  --on-accent: #ffffff;
+  --emph-bg: rgba(215, 38, 61, .14);
+  --code-bg: #161616;
+  --radius: 0px;
+  --font-heading: "BIZ UDPMincho", "Yu Mincho", "YuMincho", "Hiragino Mincho ProN", "Noto Serif JP", serif;
+}
+
+:where(.slide) strong { color: var(--accent-3); }
+:where(.slide) li::marker { color: var(--accent-3); }
+
+/* タイトル帯: 細い黒線のみ */
+.slide > h2:first-child,
+.slide > .slide-title {
+  font-weight: 600;
+  border-bottom: 1px solid var(--fg);
+}
+.slide > h2:first-child::after,
+.slide > .slide-title::after {
+  width: 64px;
+  height: 4px;
+  bottom: -2px;
+  background: var(--accent-3);
+}
+
+/* 表紙: 装飾なし・大きな明朝 */
+.layout-title { background: var(--bg); padding-left: 160px; }
+.layout-title::before {
+  left: 160px;
+  top: auto;
+  bottom: 220px;
+  width: 120px;
+  height: 6px;
+  transform: none;
+  border-radius: 0;
+  background: var(--accent-3);
+}
+.layout-title h1 { font-size: 112px; font-weight: 600; }
+.layout-title .eyebrow { color: var(--muted); }
+
+/* セクション扉: 黒 */
+.layout-section { background: #111; }
+.layout-section .section-no { color: var(--accent-3); opacity: 1; }
+.layout-section h2 { font-weight: 600; }
+
+.layout-end { background: var(--bg); }
+.layout-end h1 { font-weight: 600; }
+
+.card { border: 1px solid var(--fg); background: var(--bg); }
+.card.is-accent { border: 2px solid var(--accent-3); background: var(--bg); }
+.callout { background: var(--surface); border-left: 4px solid var(--accent-3); }
+.badge { background: var(--fg); }
+.flow > * { border-width: 2px; border-color: var(--fg); }
+.flow > * + *::before { border-left-color: var(--fg); }
+.timeline > li::before { border-color: var(--fg); }
+.timeline > li.is-done::before { background: var(--accent-3); border-color: var(--accent-3); }
+.stat-value { color: var(--fg); font-family: var(--font-heading); font-weight: 600; }
+.deck-progress { background: var(--accent-3); }
+
+/* ブランド枠 */
+.deck-brand { color: var(--fg); font-weight: 400; letter-spacing: .04em; }
+.deck-brand-label { border-color: var(--accent-3); color: var(--accent-3); border-radius: 0; }

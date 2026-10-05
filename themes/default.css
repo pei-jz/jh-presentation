@@ -1,0 +1,92 @@
+/* @theme default
+ * @label スタンダード
+ * @description 白地に青のすっきりしたデザイン。迷ったらこれ。どんな発表にも合う
+ * @tags 汎用, すっきり, 明るい
+ */
+
+/* =====================================================================
+ * テーマ: default (全テーマの土台)
+ * 色・フォント・基本タイポグラフィを定義する。他のテーマはこのファイルの後に重ねて読み込み、
+ * :root の変数と、必要ならレイアウトの装飾を上書きする。
+ *
+ * 基本タイポグラフィは :where() で詳細度を 0 にしてあるので、部品 (components.css) の指定が常に優先される。
+ * ===================================================================== */
+
+:root {
+  /* 色 */
+  --bg: #ffffff;
+  --fg: #1a1f2b;
+  --muted: #6b7280;
+  --surface: #f4f6fa;
+  --surface-2: #e9edf5;
+  --border: #d9dee8;
+  --accent: #2563eb;
+  --accent-2: #0ea5a4;
+  --accent-3: #f59e0b;
+  --danger: #dc2626;
+  --success: #16a34a;
+  --accent-soft: rgba(37, 99, 235, .10);
+  --on-accent: #ffffff;
+  --emph-bg: rgba(250, 204, 21, .32);
+
+  /* コード */
+  --code-bg: #0f1420;
+  --code-fg: #e6e9ef;
+  --code-muted: #6c7689;
+  --tok-k: #c792ea;
+  --tok-s: #c3e88d;
+  --tok-n: #f78c6c;
+  --tok-c: #6c7689;
+  --tok-f: #82aaff;
+
+  /* フォント (オフラインで動くよう OS 標準フォントのみ) */
+  --font-sans: "BIZ UDPGothic", "Yu Gothic UI", "Meiryo", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
+  --font-heading: var(--font-sans);
+  --font-mono: "Cascadia Code", "Consolas", "BIZ UDGothic", "Menlo", monospace;
+
+  /* サイズ (1920x1080 基準の px) */
+  --pad-x: 120px;
+  --pad-y: 96px;
+  --radius: 16px;
+  --fs-body: 40px;
+  --fs-small: 30px;
+  --fs-h1: 96px;
+  --fs-h2: 64px;
+  --fs-h3: 44px;
+}
+
+:where(.slide) {
+  padding: var(--pad-y) var(--pad-x);
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  line-height: 1.6;
+  color: var(--fg);
+  background: var(--bg);
+}
+
+:where(.slide) :where(h1, h2, h3) {
+  margin: 0 0 .5em;
+  font-family: var(--font-heading);
+  line-height: 1.25;
+  font-weight: 700;
+  letter-spacing: .01em;
+}
+:where(.slide) h1 { font-size: var(--fs-h1); }
+:where(.slide) h2 { font-size: var(--fs-h2); }
+:where(.slide) h3 { font-size: var(--fs-h3); }
+:where(.slide) p { margin: 0 0 .6em; }
+:where(.slide) :where(ul, ol) { margin: 0; padding-left: 1.3em; }
+:where(.slide) li { margin: .3em 0; }
+:where(.slide) li::marker { color: var(--accent); }
+:where(.slide) strong { color: var(--accent); font-weight: 700; }
+:where(.slide) a { color: var(--accent); }
+:where(.slide) :where(small, .small) { font-size: var(--fs-small); }
+:where(.slide) .muted { color: var(--muted); }
+:where(.slide) code {
+  padding: .1em .35em;
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: .88em;
+  background: var(--surface-2);
+}
+:where(.slide) pre code { padding: 0; background: none; border-radius: 0; font-size: inherit; }

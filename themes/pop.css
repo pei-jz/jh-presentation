@@ -1,0 +1,72 @@
+/* @theme pop
+ * @label ポップ
+ * @description クリーム地にコーラルと黄色の明るいデザイン。丸みがあって親しみやすい。LT・カジュアルな発表向け
+ * @tags 明るい, 親しみやすい, LT, カジュアル
+ */
+
+/* default.css の後に重ねて読み込む */
+:root {
+  --bg: #fffaf2;
+  --fg: #3a2e2a;
+  --muted: #8a7a72;
+  --surface: #fff1e0;
+  --surface-2: #ffe6cc;
+  --border: #f1dcc4;
+  --accent: #f0563a;
+  --accent-2: #2a9d8f;
+  --accent-3: #f4a91c;
+  --success: #2a9d8f;
+  --accent-soft: rgba(240, 86, 58, .10);
+  --on-accent: #ffffff;
+  --emph-bg: rgba(244, 169, 28, .35);
+  --code-bg: #2b2220;
+  --radius: 28px;
+  --font-heading: "BIZ UDPGothic", "Yu Gothic UI", "Meiryo", sans-serif;
+}
+
+/* タイトル帯: 蛍光ペン風の下線 */
+.slide > h2:first-child,
+.slide > .slide-title {
+  align-self: flex-start;
+  padding-bottom: 0;
+  border-bottom: 0;
+  background: linear-gradient(transparent 62%, rgba(244, 169, 28, .45) 62%);
+}
+.slide > h2:first-child::after,
+.slide > .slide-title::after { display: none; }
+
+/* 表紙: 丸い図形 */
+.layout-title {
+  background:
+    radial-gradient(circle at 86% 22%, var(--accent-3) 0 150px, transparent 151px),
+    radial-gradient(circle at 74% 78%, var(--accent) 0 210px, transparent 211px),
+    radial-gradient(circle at 94% 62%, var(--accent-2) 0 70px, transparent 71px),
+    var(--bg);
+}
+.layout-title::before {
+  width: 24px;
+  height: 24px;
+  top: auto;
+  bottom: 140px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 40px 0 0 var(--accent-3), 80px 0 0 var(--accent-2);
+}
+.layout-title h1 { max-width: 1100px; }
+
+/* セクション扉: コーラル → 黄色 */
+.layout-section {
+  background:
+    radial-gradient(circle at 90% 80%, rgba(255, 255, 255, .18) 0 260px, transparent 261px),
+    linear-gradient(120deg, var(--accent), var(--accent-3));
+}
+
+.card { border: 0; box-shadow: 0 10px 30px rgba(120, 70, 40, .12); background: #fff; }
+.card.is-accent { background: var(--surface); box-shadow: 0 0 0 4px var(--accent); }
+.callout { border-left: 0; border-radius: var(--radius); box-shadow: inset 12px 0 0 var(--accent); }
+.flow > * { border-width: 4px; }
+.stat-value { color: var(--accent); }
+
+/* ブランド枠: 表紙右上の図形と重ならないよう左上に */
+.deck-brand-cover { left: 160px; right: auto; }
+.deck-brand-header, .deck-brand-footer { border: 0; }

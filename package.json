@@ -1,0 +1,67 @@
+{
+  "name": "jh-presentation",
+  "version": "0.5.1",
+  "description": "An MCP server and engine for AI-built HTML presentations: single-file decks with live diagrams, ER and sequence diagrams, charts, step animations, in-place text editing and PDF export.",
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "presentation",
+    "slides",
+    "html-slides",
+    "claude",
+    "ai",
+    "diagram",
+    "er-diagram"
+  ],
+  "homepage": "https://github.com/pei-jz/jh-presentation#readme",
+  "bugs": {
+    "url": "https://github.com/pei-jz/jh-presentation/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pei-jz/jh-presentation.git"
+  },
+  "license": "MIT",
+  "author": "pei-jz",
+  "mcpName": "io.github.pei-jz/jh-presentation",
+  "type": "module",
+  "bin": {
+    "jh-presentation": "mcp/server.mjs"
+  },
+  "files": [
+    "engine/",
+    "components/",
+    "themes/",
+    "brand/",
+    "docs/*.md",
+    "mcp/",
+    "prompts/",
+    "tools/",
+    "examples/",
+    "CLAUDE.md",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "SECURITY.md"
+  ],
+  "scripts": {
+    "dev": "node tools/serve.mjs",
+    "new": "node tools/new-deck.mjs",
+    "pdf": "node tools/pdf.mjs",
+    "gallery": "node tools/gallery.mjs",
+    "mcp": "node mcp/server.mjs --workspace .workspace",
+    "mcp:inspect": "npx -y @modelcontextprotocol/inspector node mcp/server.mjs --workspace .workspace",
+    "upgrade": "node tools/upgrade.mjs",
+    "test": "node --test",
+    "repair": "node tools/repair.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.31.0",
+    "playwright-core": "^1.63.0",
+    "zod": "^4.6.5"
+  }
+}

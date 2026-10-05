@@ -1,0 +1,28 @@
+/* @theme dark
+ * @label ダーク
+ * @description 濃紺の背景に明るい青。コードやデモが映える。技術系の発表向け
+ * @tags 技術, エンジニア向け, コード, 暗い
+ */
+
+/* default.css の後に重ねて読み込む (変数の上書きのみ) */
+:root {
+  --bg: #0f131c;
+  --fg: #e8ebf2;
+  --muted: #8b93a7;
+  --surface: #181e2b;
+  --surface-2: #222a3a;
+  --border: #2d3648;
+  --accent: #60a5fa;
+  --accent-2: #2dd4bf;
+  --accent-3: #fbbf24;
+  --danger: #f87171;
+  --success: #4ade80;
+  --accent-soft: rgba(96, 165, 250, .14);
+  --on-accent: #0b1220;
+  --emph-bg: rgba(250, 204, 21, .22);
+  --code-bg: #0a0d14;
+}
+
+.layout-section { color: #fff; background: linear-gradient(135deg, #1d4ed8, #0f766e); }
+
+.deck-brand-label { border-color: var(--accent-3); color: var(--accent-3); }

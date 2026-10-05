@@ -1,0 +1,81 @@
+/* @theme corporate
+ * @label コーポレート
+ * @description 紺とゴールドの落ち着いたデザイン。角ばった端正なレイアウト。報告・提案などフォーマルな場向け
+ * @tags 落ち着いた, フォーマル, 報告, 提案
+ */
+
+/* default.css の後に重ねて読み込む */
+:root {
+  --bg: #ffffff;
+  --fg: #1c2636;
+  --muted: #64708a;
+  --surface: #f3f5f9;
+  --surface-2: #e6eaf1;
+  --border: #d3d9e4;
+  --accent: #1f3a68;
+  --accent-2: #3f6fb0;
+  --accent-3: #b8902f;
+  --accent-soft: rgba(31, 58, 104, .08);
+  --on-accent: #ffffff;
+  --emph-bg: rgba(184, 144, 47, .25);
+  --radius: 4px;
+  --pad-x: 128px;
+}
+
+/* タイトル帯: 全幅の紺の下線 + 左に金の短い線 */
+.slide > h2:first-child,
+.slide > .slide-title {
+  padding-left: 28px;
+  border-bottom: 2px solid var(--accent);
+}
+.slide > h2:first-child::after,
+.slide > .slide-title::after {
+  left: 0;
+  top: 6px;
+  bottom: 26px;
+  width: 8px;
+  height: auto;
+  background: var(--accent-3);
+}
+
+/* 表紙: 左側に紺のパネル */
+.layout-title {
+  padding-left: 760px;
+  background: linear-gradient(90deg, var(--accent) 0 640px, var(--bg) 640px);
+}
+.layout-title::before {
+  left: 640px;
+  top: 0;
+  width: 14px;
+  height: 100%;
+  transform: none;
+  border-radius: 0;
+  background: var(--accent-3);
+}
+.layout-title h1 { font-size: 92px; }
+.layout-title .eyebrow { color: var(--accent-3); }
+.layout-title .meta { padding-top: 32px; border-top: 2px solid var(--border); }
+
+/* セクション扉: 紺のベタ + 金の線 */
+.layout-section {
+  background: var(--accent);
+  box-shadow: inset 0 -24px 0 var(--accent-3);
+}
+.layout-section .section-no { color: var(--accent-3); opacity: 1; }
+
+/* 結び */
+.layout-end {
+  color: var(--on-accent);
+  background: var(--accent);
+}
+.layout-end .muted { color: rgba(255, 255, 255, .7); }
+
+.card { border-width: 1px; border-top: 6px solid var(--accent); }
+.card.is-accent { border-color: var(--accent); }
+.callout { border-left-width: 8px; border-radius: 2px; }
+.badge { border-radius: 2px; }
+.btn { border-radius: 4px; }
+
+/* ブランド枠: 紺背景の結びでは白文字 */
+.deck-brand-holder.on-layout-end .deck-brand { color: rgba(255, 255, 255, .85); }
+.deck-brand-footer { border-top-color: var(--accent); }

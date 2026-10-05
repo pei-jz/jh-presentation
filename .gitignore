@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.DS_Store
+Thumbs.db
+gallery/
+.workspace/
+# decks/ を MCP のワークスペースとして使った場合に作られるもの
+decks/brand/
+decks/themes/
+decks/prompts/
+decks/decks/
+decks/engine/
+decks/components/
+decks/gallery/
+decks/*.pdf
+decks/.history/
+.history/

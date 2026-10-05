@@ -1,0 +1,408 @@
+/* =====================================================================
+ * 図の部品 (diagrams.js) の見た目
+ * 色はテーマ変数だけを使う (テーマを変えると図も追従する)
+ * ===================================================================== */
+
+.dg, .dg-stack {
+  position: relative;
+  width: 100%;
+  height: 680px;
+}
+.fill > .dg, .fill > .dg-stack { height: 100%; }
+.dg > script, .dg-stack > script { display: none; }
+.dg-step { display: none; }
+.dg-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  font-family: var(--font-sans);
+  user-select: none;
+}
+.dg-error {
+  padding: 24px;
+  border: 2px dashed var(--danger);
+  border-radius: 12px;
+  font-size: 26px;
+  color: var(--danger);
+}
+
+/* ---- ノード ---------------------------------------------------------- */
+.dg-node { cursor: default; transition: opacity .35s; }
+.dg-node.has-detail, .dg-node.has-children, .er-table { cursor: pointer; }
+.dg-shape {
+  fill: var(--surface);
+  stroke: var(--border);
+  stroke-width: 3;
+  transition: fill .3s, stroke .3s, stroke-width .3s;
+}
+.dg-shape-line { fill: none; stroke: var(--border); stroke-width: 3; }
+.dg-node:hover > .dg-shape { stroke: var(--accent); }
+.dg-node.is-accent > .dg-shape { fill: var(--accent); stroke: var(--accent); }
+.dg-node.is-accent > .dg-label, .dg-node.is-accent > .dg-sub { fill: var(--on-accent); }
+.dg-node.is-ext > .dg-shape { stroke-dasharray: 12 8; fill: var(--bg); }
+.dg-node.is-user > .dg-shape { fill: var(--accent-soft); stroke: var(--accent); }
+.dg-node.is-db > .dg-shape { fill: var(--surface-2); }
+.dg-node.is-queue > .dg-shape { fill: var(--bg); stroke: var(--accent-2); stroke-width: 4; }
+.dg-label {
+  font-size: 30px;
+  font-weight: 700;
+  fill: var(--fg);
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+.dg-sub, .dg-hint {
+  font-size: 24px;
+  fill: var(--muted);
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+.dg-detail-mark { fill: var(--accent); opacity: .7; }
+
+/* 入れ子の詳細図: 全体表示では隠し、ズームすると表示 */
+.dg-children { opacity: .45; pointer-events: none; transition: opacity .45s .2s; }
+.dg-node.is-open > .dg-children { opacity: 1; pointer-events: auto; }
+.dg-node.has-children.is-open > .dg-hint { opacity: 0; }
+.dg-node.has-children > .dg-shape { fill: var(--bg); stroke-width: 4; }
+.dg-node.has-children.is-open > .dg-shape { stroke: var(--accent); }
+.dg-hint { transition: opacity .3s; }
+
+/* ---- 矢印 ------------------------------------------------------------ */
+.dg-edge { transition: opacity .35s; }
+.dg-edge-line { fill: none; stroke: var(--muted); stroke-width: 3; }
+.dg-edge.is-dashed .dg-edge-line { stroke-dasharray: 10 8; }
+.dg-edge-hi { stroke: var(--accent); stroke-width: 5; opacity: 0; transition: opacity .3s; }
+.dg-arrow-n { fill: var(--muted); }
+.dg-arrow-a { fill: var(--accent); }
+.dg-arrow-open { fill: none; stroke: var(--muted); stroke-width: 1.6; }
+.dg-edge-label {
+  font-size: 24px;
+  fill: var(--muted);
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 8px;
+  stroke-linejoin: round;
+}
+.dg-dot { fill: var(--accent); opacity: 0; transition: opacity .3s; }
+.dg-edge.is-flowing .dg-dot { opacity: 1; }
+.dg-edge.is-flowing .dg-edge-hi, .dg-edge.is-focus .dg-edge-hi { opacity: 1; }
+
+/* 強調 (ステップの focus・クリック): それ以外を薄くする */
+/* 入れ子の詳細図の中のノードは対象外 (ズームしたときに薄くならないように) */
+.dg.has-focus .dg-svg > .dg-nodes > .dg-node:not(.is-focus),
+.dg.has-focus .dg-svg > .dg-edges > .dg-edge:not(.is-focus):not(.is-flowing) { opacity: .2; }
+.dg-node.is-focus > .dg-shape { stroke: var(--accent); stroke-width: 5; }
+
+/* ---- グループ ---------------------------------------------------------- */
+.dg-group rect { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2; stroke-dasharray: 8 8; opacity: .8; }
+.dg-group-label { font-size: 24px; font-weight: 700; fill: var(--accent); }
+
+/* ---- 詳細パネル・説明バー ------------------------------------------------ */
+.dg-panel {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 5;
+  width: min(38%, 620px);
+  max-height: calc(100% - 32px);
+  overflow: auto;
+  padding: 24px 28px;
+  border: 2px solid var(--accent);
+  border-radius: var(--radius);
+  font-size: 28px;
+  line-height: 1.55;
+  color: var(--fg);
+  background: var(--bg);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, .18);
+  animation: dg-panel-in .3s ease both;
+}
+.dg-panel[hidden] { display: none; }
+.dg-panel-title { margin: 0 40px 12px 0; font-size: 32px; font-weight: 700; color: var(--accent); }
+.dg-panel-body p { margin: 0 0 .5em; }
+.dg-panel-body ul { margin: 0; padding-left: 1.2em; }
+.dg-panel-close {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  font-size: 30px;
+  line-height: 1;
+  color: var(--muted);
+  background: var(--surface);
+  cursor: pointer;
+}
+.dg-panel-close:hover { color: var(--fg); }
+@keyframes dg-panel-in { from { opacity: 0; transform: translateX(24px); } }
+.dg-caption {
+  position: absolute;
+  left: 16px;
+  bottom: 12px;
+  z-index: 4;
+  max-width: 70%;
+  padding: 12px 22px;
+  border-left: 8px solid var(--accent);
+  border-radius: 8px;
+  font-size: 28px;
+  line-height: 1.5;
+  color: var(--fg);
+  background: var(--surface);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .08);
+}
+.dg-caption[hidden] { display: none; }
+
+/* ---- ER 図 ------------------------------------------------------------ */
+.er-table { transition: opacity .35s; }
+.er-table.is-hidden, .er-rel.is-hidden { visibility: hidden; opacity: 0; }
+.er-head { fill: var(--accent); }
+.er-title { font-size: 28px; font-weight: 700; fill: var(--on-accent); text-anchor: middle; }
+.er-row-bg { fill: transparent; transition: fill .3s; }
+.er-row.is-key .er-row-bg { fill: var(--emph-bg); }
+.er-col { font-size: 24px; fill: var(--fg); }
+.er-row.is-pk .er-col { font-weight: 700; }
+.er-type { font-size: 22px; fill: var(--muted); text-anchor: end; font-family: var(--font-mono); }
+.er-key { font-size: 21px; font-weight: 700; fill: var(--accent-3); font-family: var(--font-mono); }
+.er-row.is-pk .er-key { fill: var(--accent); }
+.er-card { fill: none; stroke: var(--muted); stroke-width: 3; }
+.er-rel.is-focus .er-card { stroke: var(--accent); }
+.er-detail { width: 100%; border-collapse: collapse; font-size: 24px; }
+.er-detail td { padding: 6px 4px; border-bottom: 1px solid var(--border); }
+.er-detail td:last-child { color: var(--muted); font-family: var(--font-mono); font-size: 20px; text-align: right; }
+
+/* ---- シーケンス図 -------------------------------------------------------- */
+.seq-life { stroke: var(--border); stroke-width: 3; stroke-dasharray: 10 10; }
+.seq-msg { transition: opacity .3s; }
+.seq-msg.is-hidden { visibility: hidden; opacity: 0; }
+.seq-line { fill: none; stroke: var(--muted); stroke-width: 3; }
+.seq-msg.is-return .seq-line { stroke-dasharray: 10 8; }
+.seq-label { font-size: 24px; fill: var(--fg); text-anchor: middle; paint-order: stroke; stroke: var(--bg); stroke-width: 8px; stroke-linejoin: round; }
+.seq-label.is-self { text-anchor: start; }
+.seq-msg.is-current .seq-line { stroke: var(--accent); stroke-width: 5; }
+.seq-msg.is-current .seq-label { fill: var(--accent); font-weight: 700; }
+.slide.active .seq-msg.is-new:not(.is-return) .seq-line { stroke-dasharray: 1; animation: dg-draw .6s ease-out both; }
+.slide.active .seq-msg.is-new.is-return .seq-line { animation: dg-fade .5s both; }
+.slide.active .seq-msg.is-new .seq-label { animation: dg-fade .4s .25s both; }
+@keyframes dg-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes dg-fade { from { opacity: 0; } }
+
+/* ---- チャート ------------------------------------------------------------ */
+.chart-grid { stroke: var(--border); stroke-width: 2; }
+.chart-tick { font-size: 28px; fill: var(--muted); }
+.chart-tick.is-y { text-anchor: end; }
+.chart-tick.is-x { text-anchor: middle; }
+.chart-unit { font-size: 26px; fill: var(--muted); text-anchor: end; }
+.chart-legend-item { cursor: pointer; font-size: 28px; fill: var(--fg); }
+.chart-legend-item.is-off { opacity: .35; }
+.chart-series .chart-bar rect { fill: var(--c); }
+.chart-value { font-size: 27px; font-weight: 700; fill: var(--fg); text-anchor: middle; }
+.chart-value.is-h { text-anchor: start; }
+.chart-line { fill: none; stroke: var(--c); stroke-width: 6; stroke-linejoin: round; stroke-linecap: round; stroke-dasharray: 1; }
+.chart-point circle { fill: var(--bg); stroke: var(--c); stroke-width: 5; }
+.chart-slice path { fill: var(--c); stroke: var(--bg); stroke-width: 4; cursor: pointer; transition: transform .25s; transform-origin: center; transform-box: fill-box; }
+.chart-slice path:hover { transform: scale(1.03); }
+.chart-pie-label { font-size: 28px; fill: var(--fg); }
+.chart-series.is-off, .chart-series .is-off { display: none; }
+.is-pending { visibility: hidden; opacity: 0; }
+.chart-tip {
+  position: absolute;
+  z-index: 6;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 22px;
+  white-space: nowrap;
+  color: #fff;
+  background: rgba(17, 24, 39, .9);
+  pointer-events: none;
+}
+.chart-tip[hidden] { display: none; }
+/* 伸びる・描かれるアニメーション (表示時) */
+.chart-bar rect { transform-box: fill-box; transition: opacity .3s; }
+.chart-plot.is-v .chart-bar rect { transform-origin: 50% 100%; }
+.chart-plot.is-h .chart-bar rect { transform-origin: 0 50%; }
+.slide.active .chart-plot.is-v .chart-bar:not(.is-pending) rect { animation: dg-grow-y .8s cubic-bezier(.2, .7, .2, 1) calc(var(--i) * 60ms) both; }
+.slide.active .chart-plot.is-h .chart-bar:not(.is-pending) rect { animation: dg-grow-x .8s cubic-bezier(.2, .7, .2, 1) calc(var(--i) * 60ms) both; }
+.slide.active .chart-bar:not(.is-pending) .chart-value,
+.slide.active .chart-point:not(.is-pending) { animation: dg-fade .4s calc(.5s + var(--i) * 60ms) both; }
+.slide.active .chart-series:not(.is-pending) > .chart-line { animation: dg-draw 1.2s ease-in-out both; }
+.slide.active .chart-slice:not(.is-pending) { animation: dg-pop .5s calc(var(--i) * 90ms) both; }
+@keyframes dg-grow-y { from { transform: scaleY(0); } }
+@keyframes dg-grow-x { from { transform: scaleX(0); } }
+@keyframes dg-pop { from { opacity: 0; transform: scale(.85); } }
+.chart-slice { transform-box: fill-box; transform-origin: center; }
+
+/* ---- 3D 分解図 ---------------------------------------------------------- */
+.dg-stack {
+  --tilt: 52deg;
+  --rot: -28deg;
+  --gap-closed: 24px;
+  --gap-open: 190px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  perspective: 2400px;
+  cursor: grab;
+}
+.stack3d-inner {
+  position: relative;
+  width: 860px;
+  height: 170px;
+  transform-style: preserve-3d;
+  transform: rotateX(var(--tilt)) rotateZ(var(--rot));
+}
+.layer3d {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 40px;
+  border: 3px solid var(--accent);
+  border-radius: var(--radius);
+  font-size: 40px;
+  font-weight: 700;
+  color: var(--fg);
+  background: color-mix(in srgb, var(--bg) 82%, var(--accent) 18%);
+  box-shadow: 0 30px 60px rgba(0, 0, 0, .18);
+  transform: translateZ(calc(var(--z) * var(--gap-closed)));
+  transition: transform .9s cubic-bezier(.2, .7, .2, 1), background-color .3s, opacity .3s;
+  cursor: pointer;
+}
+.layer3d:nth-child(3n+2) { border-color: var(--accent-2); background: color-mix(in srgb, var(--bg) 82%, var(--accent-2) 18%); }
+.layer3d:nth-child(3n+3) { border-color: var(--accent-3); background: color-mix(in srgb, var(--bg) 82%, var(--accent-3) 18%); }
+.dg-stack.is-exploded .layer3d { transform: translateZ(calc(var(--z) * var(--gap-open))); }
+.dg-stack.has-focus .layer3d:not(.is-selected) { opacity: .35; }
+.dg-stack.is-exploded .layer3d.is-selected { transform: translateZ(calc(var(--z) * var(--gap-open) + 60px)); }
+.dg-stack .dg-panel { cursor: default; }
+
+/* ---- 印刷・一覧・編集中: 動きを止めて全体を見せる ---------------------------------- */
+.deck-print-mode .dg-dot, .deck-thumb-slide .dg-dot { display: none; }
+.deck-print-mode .dg-panel, .deck-print-mode .dg-caption, .deck-print-mode .chart-tip { display: none !important; }
+
+/* ---- ビフォー・アフター (.compare) ------------------------------------------ */
+.dg-compare {
+  --pos: 50%;
+  position: relative;
+  height: 680px;
+  overflow: hidden;
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  cursor: ew-resize;
+  user-select: none;
+  touch-action: none;
+}
+.fill > .dg-compare { height: 100%; }
+.compare-item {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  overflow: hidden;
+  padding: 64px 56px 40px;
+  background: var(--surface);
+}
+.compare-item.is-after { background: var(--bg); clip-path: inset(0 0 0 var(--pos)); }
+.compare-item > img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.compare-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: clamp(0px, calc(var(--pos) - 2.5px), calc(100% - 5px)); /* 端でも枠の外に出ない */
+  z-index: 3;
+  width: 5px;
+  background: var(--accent);
+  pointer-events: none;
+}
+.compare-knob {
+  position: absolute;
+  top: 50%;
+  left: clamp(34px, var(--pos), calc(100% - 34px));
+  z-index: 3;
+  pointer-events: none;
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  font-size: 30px;
+  color: var(--on-accent);
+  background: var(--accent);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .25);
+  transform: translate(-50%, -50%);
+}
+.compare-label {
+  position: absolute;
+  top: 14px;
+  z-index: 4;
+  padding: 4px 16px;
+  border-radius: 999px;
+  font-size: 26px;
+  font-weight: 700;
+  pointer-events: none;
+}
+.compare-label.is-before { left: 16px; color: var(--fg); background: var(--surface-2); }
+.compare-label.is-after { right: 16px; color: var(--on-accent); background: var(--accent); }
+/* 印刷・一覧: 左右に並べる */
+.deck-print-mode .dg-compare, .deck-thumb-slide .dg-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+.deck-print-mode .compare-item, .deck-thumb-slide .compare-item { position: relative; clip-path: none; padding: 64px 28px 28px; }
+.deck-print-mode .compare-item > *, .deck-thumb-slide .compare-item > * { zoom: .8; } /* 半分の幅に収めるため縮小 */
+.deck-print-mode .compare-item.is-after, .deck-thumb-slide .compare-item.is-after { border-left: 5px solid var(--accent); }
+.deck-print-mode .compare-handle, .deck-thumb-slide .compare-handle,
+.deck-print-mode .compare-knob, .deck-thumb-slide .compare-knob { display: none; }
+
+/* ---- ターミナル再生 (.terminal) --------------------------------------------- */
+.dg-terminal {
+  display: flex;
+  flex-direction: column;
+  height: 640px;
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: var(--code-bg);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, .25);
+}
+.fill > .dg-terminal { height: 100%; }
+.dg-terminal > script { display: none; }
+.term-bar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 14px 22px;
+  background: color-mix(in srgb, var(--code-bg) 80%, #fff 20%);
+}
+.term-dots { display: flex; gap: 10px; }
+.term-dots i { width: 16px; height: 16px; border-radius: 50%; background: #ff5f57; }
+.term-dots i:nth-child(2) { background: #febc2e; }
+.term-dots i:nth-child(3) { background: #28c840; }
+.term-title { font: 26px var(--font-mono); color: var(--code-muted); }
+.term-screen {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 22px 30px;
+  font: 28px/1.55 var(--font-mono);
+  font-variant-ligatures: none;
+  color: var(--code-fg);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.term-prompt { color: var(--tok-s); }
+.term-line.is-cmd .term-text { color: #fff; font-weight: 700; }
+.term-line.is-out { color: var(--code-fg); opacity: .9; }
+.term-line.is-ok { color: var(--tok-s); }
+.term-line.is-err { color: #ff7b72; }
+.term-line.is-warn { color: #e3b341; }
+.term-line.is-dim { color: var(--code-muted); }
+.term-cursor {
+  display: inline-block;
+  width: .6em;
+  height: 1.1em;
+  margin-left: 2px;
+  vertical-align: -.2em;
+  background: var(--code-fg);
+  animation: deck-caret .9s steps(1) infinite;
+}

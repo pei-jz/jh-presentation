@@ -1,0 +1,73 @@
+# Changelog
+
+All notable changes to this project are documented here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/)
+(while below 1.0, minor versions may contain breaking changes).
+
+Decks record the engine version that built them (`<meta name="generator">`). Writing to a deck keeps its embedded
+engine; run `upgrade_deck` / `npm run upgrade` to move a deck to the current engine. The edit protocol version is
+documented in `docs/edit-protocol.md`; hosts and save servers refuse edits from decks with a different version.
+
+## [0.5.1]
+
+### Added
+- Before/after slider (`.compare`) and terminal replay (`.terminal`) components.
+- Decks include the MIT notice for the embedded engine, components and themes.
+
+## [0.5.0]
+
+### Added
+- Diagram components with a shared base (auto layout, zoom camera, detail panel, caption, engine steps, static print):
+  flow diagrams and zoom maps (`.diagram`), ER diagrams (`.er-diagram`), sequence diagrams (`.seq-diagram`),
+  charts (`.chart`), 3D layer stacks (`.stack3d`).
+
+### Fixed
+- Audits now cover every slide (inactive slides were skipped). SVG text size is judged at its rendered scale.
+
+## [0.4.1]
+
+### Added
+- `open_deck` can open a fullscreen app window; per-deck presentation mode enters fullscreen on the first action.
+
+## [0.4.0]
+
+### Changed
+- Edit rule v2: editable units are decided by structure (text plus inline elements), so custom parts become editable.
+  Edit protocol bumped to 2.
+
+### Added
+- Double-click a box to edit it; Save and exit buttons in the edit bar.
+
+## [0.3.2]
+
+### Added
+- Ctrl+S always saves through the deck (never the browser's "Save page as"); direct save to the file when served by
+  the local server; `repair_deck` / `npm run repair` for decks saved by the browser.
+
+## [0.3.1]
+
+### Fixed
+- Safe slide replacement with a position-preserving parser, structure validation, atomic saves, revisions and history.
+- Stricter audits (overlap, contrast, images, warnings, external requests), consistent step state on direct entry,
+  render readiness instead of fixed delays, local-only preview server.
+
+### Changed
+- Writes keep the embedded engine; upgrades are explicit.
+
+## [0.3.0]
+
+### Added
+- In-place text editing (E key) and a postMessage edit protocol for host applications.
+
+## [0.2.0]
+
+### Changed
+- Decks are single self-contained HTML files.
+
+### Added
+- Brand band (name and logo), embedded images, custom themes, motion levels in templates.
+
+## [0.1.0]
+
+### Added
+- Slide engine, components, themes, MCP server, theme gallery and request templates.

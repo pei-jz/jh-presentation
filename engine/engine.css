@@ -1,0 +1,420 @@
+/* =====================================================================
+ * JH Deck Engine — ベーススタイル
+ * 見た目(色・フォント)は themes/*.css、部品は components/*.css が担当。
+ * このファイルは「スライドとして動く」ための最小限だけを持つ。
+ * ===================================================================== */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  overflow: hidden;
+  background: #000;
+}
+
+.deck {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: #000;
+}
+
+/* 1920x1080 の固定キャンバス。engine.js が画面に合わせて scale する */
+.deck-stage {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 1920px;
+  height: 1080px;
+  transform-origin: center center;
+  overflow: hidden;
+  background: var(--bg, #fff);
+}
+
+/* 初期化前のちらつき防止 */
+html:not(.deck-ready) .slide { visibility: hidden; }
+
+/* ---- スライド ------------------------------------------------------ */
+.slide {
+  position: absolute;
+  inset: 0;
+  width: 1920px;
+  height: 1080px;
+  overflow: hidden;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.slide.active {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+  z-index: 1;
+}
+
+.slide aside.notes { display: none !important; }
+
+/* ---- 切り替えトランジション (data-transition) ------------------------- */
+.slide[data-transition="fade"] {
+  transition: opacity .45s ease, visibility .45s;
+}
+.slide[data-transition="slide"] {
+  transition: opacity .5s ease, transform .5s cubic-bezier(.3, .7, .2, 1), visibility .5s;
+}
+.slide[data-transition="slide"].future { transform: translateX(120px); }
+.slide[data-transition="slide"].past { transform: translateX(-120px); }
+.slide[data-transition="zoom"] {
+  transition: opacity .5s ease, transform .5s cubic-bezier(.3, .7, .2, 1), visibility .5s;
+}
+.slide[data-transition="zoom"]:not(.active) { transform: scale(.94); }
+.slide[data-transition="none"] { transition: none; }
+
+/* ---- ステップ (段階表示) ---------------------------------------------- */
+.step {
+  opacity: 0;
+  transition: opacity .4s ease, transform .4s cubic-bezier(.2, .7, .2, 1), background-color .3s, color .3s;
+}
+.step.visible { opacity: 1; }
+
+/* 表示方法のバリエーション */
+.step.fade-up { transform: translateY(32px); }
+.step.fade-left { transform: translateX(-48px); }
+.step.zoom-in { transform: scale(.85); }
+.step.fade-up.visible, .step.fade-left.visible, .step.zoom-in.visible { transform: none; }
+
+/* 常に表示し、そのステップの間だけ強調する */
+.step.emph { opacity: 1; }
+.step.emph.current {
+  background: var(--emph-bg, rgba(255, 210, 0, .28));
+  box-shadow: 0 0 0 6px var(--emph-bg, rgba(255, 210, 0, .28));
+  border-radius: 4px;
+}
+
+/* 表示済みのステップを、次のステップ以降は薄くする */
+.step.dim-after.visible:not(.current) { opacity: .35; }
+
+/* anim-* クラスと組み合わせた場合は anim 側に任せる */
+.step[class*="anim-"] { transition: none; }
+
+/* ---- 進捗バー・ページ番号 -------------------------------------------- */
+.deck-progress {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 6px;
+  background: var(--accent, #2563eb);
+  transform-origin: left center;
+  transform: scaleX(0);
+  transition: transform .4s ease;
+  z-index: 10;
+}
+.deck-pageno {
+  position: absolute;
+  right: 40px;
+  bottom: 24px;
+  font: 500 24px/1 var(--font-sans, sans-serif);
+  color: var(--muted, #888);
+  z-index: 10;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- ブラックアウト ---------------------------------------------------- */
+body.deck-black .deck-stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: #000;
+  z-index: 100;
+}
+
+/* ---- 一覧 (Overview) -------------------------------------------------- */
+.deck-overview {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  overflow: auto;
+  padding: 32px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 320px);
+  gap: 24px;
+  justify-content: center;
+  align-content: start;
+  background: rgba(10, 12, 18, .94);
+}
+.deck-thumb {
+  position: relative;
+  width: 320px;
+  height: 180px;
+  padding: 0;
+  border: 3px solid transparent;
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: pointer;
+  background: var(--bg, #fff);
+}
+.deck-thumb:hover { border-color: rgba(255, 255, 255, .5); }
+.deck-thumb.is-current { border-color: var(--accent, #2563eb); }
+.deck-thumb-inner {
+  width: 1920px;
+  height: 1080px;
+  transform: scale(calc(314 / 1920));
+  transform-origin: top left;
+  pointer-events: none;
+}
+.deck-thumb-slide {
+  visibility: visible !important;
+  opacity: 1 !important;
+  transform: none !important;
+}
+.deck-thumb-slide *, .deck-thumb-slide *::before, .deck-thumb-slide *::after {
+  animation: none !important;
+  transition: none !important;
+}
+.deck-thumb-slide .step { opacity: 1; transform: none; }
+.deck-thumb-no {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font: 600 14px/1.4 sans-serif;
+  color: #fff;
+  background: rgba(0, 0, 0, .6);
+}
+
+/* ---- ヘルプ ---------------------------------------------------------- */
+.deck-help {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, .6);
+}
+.deck-help-box {
+  min-width: 420px;
+  padding: 24px 32px;
+  border-radius: 12px;
+  font: 15px/1.6 var(--font-sans, sans-serif);
+  color: #e5e7eb;
+  background: #1f2430;
+}
+.deck-help-box h2 { margin: 0 0 12px; font-size: 18px; }
+.deck-help-box td { padding: 4px 16px 4px 0; }
+.deck-help-box td:first-child { color: #9ca3af; font-family: var(--font-mono, monospace); }
+
+/* ---- 発表者ビュー ------------------------------------------------------ */
+body.deck-presenter-mode { overflow: hidden; background: #111318; }
+body.deck-presenter-mode .deck { display: none; }
+.pv {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  grid-template-columns: 1.6fr 1fr;
+  grid-template-rows: auto 1fr;
+  gap: 16px;
+  padding: 16px;
+  font-family: var(--font-sans, sans-serif);
+  color: #e5e7eb;
+}
+.pv-label {
+  margin-bottom: 6px;
+  font-size: 13px;
+  letter-spacing: .08em;
+  color: #9ca3af;
+}
+.pv-frame {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #000;
+}
+.pv-frame iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+.pv-side { display: flex; flex-direction: column; gap: 16px; }
+.pv-next { position: relative; }
+.pv-end {
+  display: none;
+  position: absolute;
+  inset: 24px 0 0;
+  place-items: center;
+  border-radius: 6px;
+  font-size: 28px;
+  color: #9ca3af;
+  background: #000;
+}
+.pv-next.is-end .pv-end { display: grid; }
+.pv-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 24px;
+}
+.pv-timer {
+  font-size: 64px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  user-select: none;
+}
+.pv-timer.paused { color: #f59e0b; }
+.pv-clock { font-size: 28px; color: #9ca3af; font-variant-numeric: tabular-nums; }
+.pv-pos { width: 100%; font-size: 16px; color: #9ca3af; }
+.pv-notes {
+  grid-column: 1 / -1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.pv-notes-body {
+  flex: 1;
+  overflow: auto;
+  padding: 16px 20px;
+  border-radius: 6px;
+  font-size: 22px;
+  line-height: 1.7;
+  background: #1b1f27;
+}
+.pv-notes-body p { margin: 0 0 .6em; }
+.pv-empty { color: #6b7280; }
+
+/* ---- 文字編集モード (E キー) ------------------------------------------- */
+body.deck-editing [data-jh-edit] {
+  outline: 2px dashed rgba(37, 99, 235, .45);
+  outline-offset: 6px;
+  cursor: text;
+}
+body.deck-editing [data-jh-edit]:hover { outline-color: rgba(37, 99, 235, .9); }
+body.deck-editing [data-jh-edit]:focus {
+  outline: 3px solid #2563eb;
+  background-color: rgba(37, 99, 235, .07);
+}
+/* 編集中は全ステップを表示し、動きを止める */
+body.deck-editing .slide .step { opacity: 1 !important; transform: none !important; }
+body.deck-editing .slide *, body.deck-editing .slide *::before, body.deck-editing .slide *::after { animation: none !important; }
+.deck-edit-badge {
+  position: fixed;
+  left: 12px;
+  top: 12px;
+  z-index: 1200;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  max-width: calc(100% - 24px);
+  padding: 6px 8px 6px 14px;
+  border-radius: 8px;
+  font: 13px/1.5 "BIZ UDPGothic", "Yu Gothic UI", Meiryo, sans-serif;
+  color: #fff;
+  background: rgba(17, 24, 39, .9);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .25);
+}
+.deck-edit-badge[hidden] { display: none; }
+.deck-edit-badge b { color: #93c5fd; }
+.deck-edit-hint { color: #d1d5db; }
+.deck-edit-state { color: #fbbf24; }
+.deck-edit-state:empty { display: none; }
+.deck-edit-btn {
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 6px;
+  font: inherit;
+  font-weight: 700;
+  color: #fff;
+  background: #2563eb;
+  cursor: pointer;
+}
+.deck-edit-btn:hover { filter: brightness(1.15); }
+.deck-edit-btn.is-exit { background: rgba(255, 255, 255, .14); }
+.deck-edit-btn[hidden] { display: none; }
+.deck-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  z-index: 1300;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font: 14px/1.5 "BIZ UDPGothic", "Yu Gothic UI", Meiryo, sans-serif;
+  color: #fff;
+  background: rgba(17, 24, 39, .92);
+  transform: translate(-50%, 20px);
+  opacity: 0;
+  transition: opacity .25s, transform .25s;
+  pointer-events: none;
+}
+.deck-toast.is-show { opacity: 1; transform: translate(-50%, 0); }
+.deck-broken-banner {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  z-index: 1400;
+  padding: 10px 16px;
+  font: 14px/1.5 "BIZ UDPGothic", "Yu Gothic UI", Meiryo, sans-serif;
+  color: #fff;
+  background: #b91c1c;
+}
+.deck-broken-banner code { padding: 1px 6px; border-radius: 4px; background: rgba(0, 0, 0, .25); }
+
+/* ---- 監査中はアニメーション・変形を無効化して実寸を測る ---------------- */
+body.deck-auditing .step { transform: none !important; }
+body.deck-auditing *, body.deck-auditing *::before, body.deck-auditing *::after {
+  animation: none !important;
+  transition: none !important;
+}
+body.deck-auditing .slide { transform: none !important; visibility: visible !important; }
+
+/* ---- 印刷 (PDF) モード: ?print ---------------------------------------- */
+@page { size: 1920px 1080px; margin: 0; }
+
+body.deck-print-mode {
+  overflow: visible;
+  height: auto;
+  background: #fff;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.deck-print-mode .deck { position: static; overflow: visible; background: none; }
+.deck-print-mode .deck-stage {
+  position: static;
+  width: 1920px;
+  height: auto;
+  transform: none;
+  overflow: visible;
+  background: none;
+}
+.deck-print-mode .slide {
+  position: relative;
+  visibility: visible;
+  opacity: 1;
+  transform: none;
+  break-after: page;
+  page-break-after: always;
+}
+.deck-print-mode .slide:last-child { break-after: auto; page-break-after: auto; }
+.deck-print-mode .step { opacity: 1; transform: none; }
+.deck-print-mode .step.dim-after { opacity: 1; }
+.deck-print-mode .step.emph.current { background: none; box-shadow: none; }
+.deck-print-mode *, .deck-print-mode *::before, .deck-print-mode *::after {
+  animation: none !important;
+  transition: none !important;
+}
+.deck-print-pageno {
+  position: absolute;
+  right: 40px;
+  bottom: 24px;
+  font: 500 24px/1 var(--font-sans, sans-serif);
+  color: var(--muted, #888);
+}

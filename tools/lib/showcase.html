@@ -1,0 +1,74 @@
+    <section class="slide layout-title no-chrome">
+      <div class="eyebrow anim-fade">THEME PREVIEW</div>
+      <h1 class="anim-fade-up" style="--delay:.1s">{{LABEL}}</h1>
+      <div class="subtitle anim-fade-up" style="--delay:.25s">{{DESCRIPTION}}</div>
+      <div class="meta anim-fade" style="--delay:.5s">テーマ名: {{NAME}}</div>
+    </section>
+
+    <section class="slide layout-section">
+      <div class="section-no anim-fade">SECTION 01</div>
+      <h2 class="anim-fade-up" style="--delay:.1s">セクション扉</h2>
+      <p class="anim-fade" style="--delay:.35s">話の区切りに使うスライド</p>
+    </section>
+
+    <section class="slide">
+      <h2>比較はカードで並べる</h2>
+      <div class="cols-2 stretch fill">
+        <div class="card step fade-up">
+          <h3>現状</h3>
+          <ul>
+            <li>手作業での集計に毎週 3 時間</li>
+            <li>担当者によって結果がぶれる</li>
+          </ul>
+        </div>
+        <div class="card is-accent step fade-up">
+          <h3>改善後</h3>
+          <ul>
+            <li>自動集計で <strong>5 分</strong> に短縮</li>
+            <li>手順が統一され結果が安定</li>
+          </ul>
+        </div>
+      </div>
+      <div class="callout mt-2 step fade-up">ポイントはコールアウトで強調する</div>
+    </section>
+
+    <section class="slide">
+      <h2>数字は大きく見せる</h2>
+      <div class="cols-3 fill middle">
+        <div class="stat anim-fade-up">
+          <div class="stat-value"><span data-count-to="98">98</span><span class="unit">%</span></div>
+          <div class="stat-label">作業時間の削減</div>
+        </div>
+        <div class="stat anim-fade-up" style="--delay:.15s">
+          <div class="stat-value"><span data-count-to="12">12</span><span class="unit">件</span></div>
+          <div class="stat-label">導入チーム数</div>
+        </div>
+        <div class="stat anim-fade-up" style="--delay:.3s">
+          <div class="stat-value"><span data-count-to="4.8">4.8</span></div>
+          <div class="stat-label">満足度 (5 段階)</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <h2>コードと手順</h2>
+      <div class="cols-2-1 fill">
+        <pre class="code is-sm numbered"><code class="hl" data-lang="ts" data-emph="2|3-4">
+          export async function load(id: string) {
+            const res = await fetch(`/api/items/${id}`);
+            if (!res.ok) throw new Error('not found');
+            return res.json();
+          }
+        </code></pre>
+        <ol class="timeline">
+          <li class="is-done"><div class="when">STEP 1</div><div class="what">取得</div></li>
+          <li><div class="when">STEP 2</div><div class="what">検証</div></li>
+          <li><div class="when">STEP 3</div><div class="what">返却</div></li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="slide layout-end no-chrome">
+      <h1 class="anim-zoom">ありがとうございました</h1>
+      <p class="muted anim-fade" style="--delay:.3s">{{LABEL}} テーマ</p>
+    </section>

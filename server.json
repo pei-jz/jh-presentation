@@ -1,0 +1,35 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.pei-jz/jh-presentation",
+  "title": "jh-presentation",
+  "description": "AI-built HTML presentations: single-file decks with live diagrams, charts, editing and PDF export.",
+  "repository": {
+    "url": "https://github.com/pei-jz/jh-presentation",
+    "source": "github"
+  },
+  "version": "0.5.1",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "jh-presentation",
+      "version": "0.5.1",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "JH_PRESENTATION_HOME",
+          "description": "Folder where decks are saved (default: ~/jh-presentation)",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "CHROME_PATH",
+          "description": "Path to Chrome or Edge, if not installed in the default location",
+          "isRequired": false,
+          "format": "string"
+        }
+      ]
+    }
+  ]
+}
