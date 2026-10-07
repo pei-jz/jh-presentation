@@ -223,3 +223,39 @@ test('ダブルクリックでその枠を編集でき、✕ 終了ボタンと 
   assert.deepEqual(after, { editing: false, overview: false });
   await page.close();
 });
+
+test('発表者ビューからも操作でき、発表画面がついてくる', async () => {
+  const page = await openDeck(['A', 'B', 'C'].map((t) => `<section class="slide"><h2>${t}</h2><aside class="notes"><p>ノート${t}</p></aside></section>`).join('\n'));
+  const [pv] = await Promise.all([page.waitForEvent('popup'), page.keyboard.press('s')]);
+  await pv.waitForFunction(() => document.documentElement.classList.contains('deck-ready') && !!document.querySelector('.pv'));
+  const mainIndex = () => page.evaluate(() => window.Deck.index);
+
+  // キー操作 (発表者ビューで)
+  await pv.keyboard.press('ArrowRight');
+  await page.waitForFunction(() => window.Deck.index === 1);
+  assert.equal(await pv.locator('.pv-notes-body').innerText(), 'ノートB');
+
+  // 今のスライドのクリック・ボタンでも進む / 戻る
+  await pv.click('.pv-current .pv-frame');
+  await page.waitForFunction(() => window.Deck.index === 2);
+  await pv.click('[data-nav="prev"]');
+  await page.waitForFunction(() => window.Deck.index === 1);
+  assert.equal(await mainIndex(), 1);
+  await pv.close();
+  await page.close();
+});
+
+test('srcdoc のホストは window.__JH_DECK_MODE__ で表示だけのモードにして、goto で位置を決められる', async () => {
+  const src = buildDeck({ title: 'E', slides: ['A', 'B', 'C'].map((t) => `<section class="slide"><h2>${t}</h2></section>`).join('\n') }, ctx);
+  const page = await browser.newPage();
+  await page.setContent('<iframe id="pv" sandbox="allow-scripts" style="width:640px;height:360px;border:0"></iframe>');
+  await page.evaluate((html) => {
+    document.getElementById('pv').srcdoc = html.replace('<head>', '<head><script>window.__JH_DECK_MODE__ = "embed"</script>');
+  }, src);
+  const frame = page.frameLocator('#pv');
+  await frame.locator('html.deck-ready').waitFor({ state: 'attached' });
+  await page.evaluate(() => document.getElementById('pv').contentWindow.postMessage({ jhdeck: 1, type: 'goto', index: 2, step: 0 }, '*'));
+  await frame.locator('section.slide.active h2', { hasText: 'C' }).waitFor({ state: 'attached' });
+  assert.equal(await frame.locator('body.deck-mode-embed').count(), 1);
+  await page.close();
+});

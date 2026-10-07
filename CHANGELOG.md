@@ -12,10 +12,13 @@ documented in `docs/edit-protocol.md`; hosts and save servers refuse edits from 
 
 ### Changed
 - Saving (Ctrl+S or the Save button) ends edit mode once the deck is saved.
+- The presenter view can drive the presentation: arrow keys, a click on the current or next slide,
+  and Previous / Next buttons.
 
 ### Added
 - Inside a host editor: F5 asks the host to present, Ctrl+Z / Ctrl+Y outside a box go to the host's undo
-  history, and Esc ends presenting. F5 / Ctrl+R never reload the host page from inside the frame.
+  history, Esc ends presenting and S asks the host for its presenter display. Hosts can move the deck with
+  `next` / `prev`, and load a display-only copy with `window.__JH_DECK_MODE__ = 'embed'` (moved by `goto`). F5 / Ctrl+R never reload the host page from inside the frame.
 
 ## [0.5.2]
 

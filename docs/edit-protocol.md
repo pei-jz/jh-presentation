@@ -82,6 +82,7 @@ iframe は opaque origin (sandbox で allow-same-origin なし) なので `targe
 | `save` | `{}` | iframe 内で Ctrl+S が押されたとき |
 | `undo` / `redo` | `{}` | 枠の編集中でないときの Ctrl+Z / Ctrl+Y (Ctrl+Shift+Z)。ホストの履歴で戻す・やり直す |
 | `present` | `{}` | iframe 内で F5 が押されたとき (ホストに発表 = 全画面表示を頼む) |
+| `presenter` | `{}` | iframe 内で S が押されたとき (別ウィンドウの発表者ビューは開けないので、ホストに発表者向けの表示を頼む) |
 | `present-exit` | `{}` | ホストが発表中 (`present {on:true}` を受けた後) に、枠の外で Esc が押されたとき |
 
 - `change.html` … 要素の新しい中身 (innerHTML)。`script` / イベント属性などは除去済み
@@ -94,9 +95,13 @@ iframe は opaque origin (sandbox で allow-same-origin なし) なので `targe
 |---|---|---|
 | `edit` | `{ on: boolean }` | 編集モードの切り替え (ホストのボタン) |
 | `goto` | `{ index, step }` | プレビュー再読み込み後に元の位置へ戻す |
+| `next` / `prev` | `{}` | 次へ / 前へ (ステップ単位。ホストの発表者表示のボタンなど) |
 | `error` | `{ message }` | 反映できなかったことをデッキ上に表示する |
 | `saved` | `{}` | 保存完了をデッキ上に表示する。編集モードなら終了する |
 | `present` | `{ on: boolean }` | 発表 (全画面) 表示の開始・終了を知らせる (発表中の Esc を `present-exit` にする) |
+
+表示だけの枠 (ホストの発表者表示の「次のスライド」など) は、srcdoc の `<head>` の先頭に
+`<script>window.__JH_DECK_MODE__ = 'embed'</script>` を入れて読み込む。この枠は `goto` だけを受け付ける。
 
 ホストから最初のメッセージを受け取った時点で、デッキは「ホストあり」として動く
 (Ctrl+S をホストに渡す、バッジに「保存はエディタで」と出す)。

@@ -15,7 +15,9 @@
 
   var W = 1920, H = 1080;
   var params = new URLSearchParams(location.search);
-  var MODE = params.has('print') ? 'print'
+  // エディタなど URL に ?embed を付けられない (srcdoc の) ホストは、window.__JH_DECK_MODE__ で指定する
+  var MODE = window.__JH_DECK_MODE__ === 'embed' ? 'embed'
+    : params.has('print') ? 'print'
     : params.has('presenter') ? 'presenter'
     : params.has('embed') ? 'embed'
     : 'main';
@@ -267,7 +269,9 @@
       '<div class="pv-current"><div class="pv-label">現在</div><div class="pv-frame"><iframe title="現在のスライド"></iframe></div></div>' +
       '<div class="pv-side">' +
       '  <div class="pv-next"><div class="pv-label">次</div><div class="pv-frame"><iframe title="次のスライド"></iframe></div><div class="pv-end">終了</div></div>' +
-      '  <div class="pv-meta"><div class="pv-timer" title="クリックで一時停止 / ダブルクリックでリセット">00:00</div><div class="pv-clock"></div><div class="pv-pos"></div></div>' +
+      '  <div class="pv-meta"><div class="pv-timer" title="クリックで一時停止 / ダブルクリックでリセット">00:00</div><div class="pv-clock"></div><div class="pv-pos"></div>' +
+      '    <div class="pv-nav"><button type="button" class="pv-btn" data-nav="prev" title="← / PageUp">◀ 前へ</button>' +
+      '    <button type="button" class="pv-btn is-main" data-nav="next" title="→ / Space / PageDown / クリック">次へ ▶</button></div></div>' +
       '</div>' +
       '<div class="pv-notes"><div class="pv-label">ノート</div><div class="pv-notes-body"></div></div>';
     document.body.appendChild(root);
@@ -282,6 +286,19 @@
     var embed = baseUrl() + '?embed';
     pv.cur.src = embed + hashFor(state.index, state.step);
     pv.next.src = embed + '#1';
+
+    // 発表者ビューからも操作する (手元の画面で操作し、聞き手の画面がついてくる)。
+    // スライドの表示は iframe なので、クリック・キー操作は iframe ではなくこの画面で受ける
+    [pv.cur, pv.next].forEach(function (f) { f.tabIndex = -1; });
+    root.querySelector('.pv-current .pv-frame').addEventListener('click', function () { next(); });
+    root.querySelector('.pv-next .pv-frame').addEventListener('click', function () { next(); });
+    root.querySelectorAll('[data-nav]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        if (b.getAttribute('data-nav') === 'next') next(); else prev();
+        b.blur(); // Space / Enter がボタンの押下にならないよう、フォーカスを画面に戻す
+      });
+    });
+    window.focus();
 
     // タイマー
     var elapsed = 0, last = Date.now(), running = true;
@@ -470,7 +487,9 @@
         if (MODE === 'main') toggleOverview(); else return;
         break;
       case 's': case 'S':
-        if (MODE === 'main') openPresenter(); else return;
+        if (MODE !== 'main') return;
+        // エディタの中では別ウィンドウを開けないので、発表者向けの表示はエディタに頼む
+        if (edit.hosted) postHost({ type: 'presenter' }); else openPresenter();
         break;
       case 'e': case 'E':
         if (MODE === 'main' && EditLib) setEditMode(!edit.on); else return;
@@ -997,6 +1016,8 @@
     edit.hosted = true;
     if (d.type === 'edit') setEditMode(d.on, true);
     else if (d.type === 'goto') go(d.index || 0, d.step == null ? 0 : d.step, true);
+    else if (d.type === 'next') next();
+    else if (d.type === 'prev') prev();
     else if (d.type === 'error') toast(d.message || 'エディタ側で反映できませんでした');
     else if (d.type === 'saved') { if (edit.on) setEditMode(false); toast('保存しました'); }
     else if (d.type === 'present') hostPresenting = !!d.on;
@@ -1118,6 +1139,14 @@
     if (MODE === 'main') {
       bindEditEvents();
       window.addEventListener('message', onHostMessage);
+    }
+    if (MODE === 'embed') {
+      // ホストの発表者表示など: 表示だけ。位置はホストからの goto で決める
+      window.addEventListener('message', function (ev) {
+        var d = ev.data;
+        if (!d || !d.jhdeck || ev.source !== window.parent || d.type !== 'goto') return;
+        go(d.index || 0, d.step == null ? 0 : d.step, true);
+      });
     }
     if (MODE !== 'embed') {
       document.addEventListener('keydown', onKey);
