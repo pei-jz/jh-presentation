@@ -1,6 +1,6 @@
 {
   "name": "jh-presentation",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "description": "An MCP server and engine for AI-built HTML presentations: single-file decks with live diagrams, ER and sequence diagrams, charts, step animations, in-place text editing and PDF export.",
   "keywords": [
     "mcp",
