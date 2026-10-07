@@ -117,6 +117,8 @@ test('ローカルサーバー経由で開くと、Ctrl+S で元のファイル�
     await page.keyboard.press('ControlOrMeta+s');
     await page.waitForFunction(() => (document.querySelector('.deck-toast') || {}).textContent?.includes('保存しました'), null, { timeout: 5000 })
       .catch(async (e) => { throw new Error(e.message + ' / toast: ' + await page.evaluate(() => document.querySelector('.deck-toast')?.textContent)); });
+    // 保存できたら編集モードは自動で終わる
+    assert.equal(await page.evaluate(() => document.body.classList.contains('deck-editing')), false);
     // 編集ルールの版が違う (古いエンジンの) デッキからの保存は拒否する
     const cfg = await page.evaluate(() => window.__JH_SAVE__);
     const old = await fetch(`http://127.0.0.1:${port}/__save`, {

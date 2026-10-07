@@ -8,6 +8,15 @@ Decks record the engine version that built them (`<meta name="generator">`). Wri
 engine; run `upgrade_deck` / `npm run upgrade` to move a deck to the current engine. The edit protocol version is
 documented in `docs/edit-protocol.md`; hosts and save servers refuse edits from decks with a different version.
 
+## [Unreleased]
+
+### Changed
+- Saving (Ctrl+S or the Save button) ends edit mode once the deck is saved.
+
+### Added
+- Inside a host editor: F5 asks the host to present, Ctrl+Z / Ctrl+Y outside a box go to the host's undo
+  history, and Esc ends presenting. F5 / Ctrl+R never reload the host page from inside the frame.
+
 ## [0.5.2]
 
 ### Changed

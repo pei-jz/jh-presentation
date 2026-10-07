@@ -141,6 +141,24 @@ test('サンドボックス iframe (jh-editor と同じ条件) で編集が反�
   await target.click();
   await page.keyboard.press('Control+s');
   await page.waitForFunction(() => window.msgs.some((m) => m.type === 'save'));
+
+  // ホストが保存を終えたら (saved)、編集モードを自動で終える
+  const post = (m) => page.evaluate((msg) => document.getElementById('pv').contentWindow.postMessage(msg, '*'), m);
+  await post({ jhdeck: 1, type: 'saved' });
+  await page.waitForFunction(() => window.msgs.some((m) => m.type === 'edit-mode' && m.on === false));
+  assert.equal(await frame.locator('body.deck-editing').count(), 0);
+
+  // F5 は再読み込みせず「発表」をホストに頼む。枠の外の Ctrl+Z / Ctrl+Y は元に戻す / やり直す
+  await frame.locator('.deck-stage').click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press('F5');
+  await page.waitForFunction(() => window.msgs.some((m) => m.type === 'present'));
+  await page.keyboard.press('Control+z');
+  await page.keyboard.press('Control+y');
+  await page.waitForFunction(() => window.msgs.some((m) => m.type === 'undo') && window.msgs.some((m) => m.type === 'redo'));
+  // 発表中の Esc は、発表の終了をホストに頼む
+  await post({ jhdeck: 1, type: 'present', on: true });
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => window.msgs.some((m) => m.type === 'present-exit'));
   await page.close();
 });
 

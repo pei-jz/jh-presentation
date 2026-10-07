@@ -2809,6 +2809,7 @@ body.deck-print-mode {
       case 'Escape':
         if (MODE !== 'main') return;
         if (edit.on) setEditMode(false); // 編集モード中の Esc (枠の外) は編集モードを終了
+        else if (hostPresenting) postHost({ type: 'present-exit' });
         else toggleOverview();
         break;
       case 'o': case 'O':
@@ -3218,7 +3219,7 @@ body.deck-print-mode {
    */
   function save() {
     if (edit.hosted) { postHost({ type: 'save' }); return; }
-    if (!edit.dirty) { toast('変更はありません'); return; }
+    if (!edit.dirty) { setEditMode(false); toast('変更はありません'); return; }
     if (window.__JH_SAVE__) saveToServer(); else saveStandalone();
   }
 
@@ -3244,6 +3245,7 @@ body.deck-print-mode {
       var body = await res.json().catch(function () { return {}; });
       if (!res.ok || !body.ok) throw new Error(body.error || ('HTTP ' + res.status));
       markSaved();
+      setEditMode(false); // 保存できたら編集モードを終える
       toast('保存しました: ' + (body.path || cfg.file));
     } catch (e) {
       if (e instanceof TypeError) { // サーバーに届かない (停止している) → ファイルを選んで保存
@@ -3302,12 +3304,36 @@ body.deck-print-mode {
       handleStore('put', fileKey, edit.handle);
       handleStore('put', 'last', edit.handle);
       markSaved();
+      setEditMode(false);
       toast('保存しました: ' + edit.handle.name);
     } catch (e) {
       if (e && e.name === 'AbortError') return;
       edit.handle = null;
       toast('保存できませんでした: ' + (e.message || e));
     }
+  }
+
+  // ホストが発表 (全画面) 表示にしているか。そのときの Esc は発表の終了をホストに頼む
+  var hostPresenting = false;
+
+  /**
+   * エディタ (ホスト) の iframe の中で動いているときのキー操作。
+   *   - F5 / Ctrl+R: ブラウザの再読み込みは止める (iframe の中で押すと、エディタ全体が読み込み直されるため)。
+   *     ホストがあれば F5 は「発表」としてホストに渡す
+   *   - Ctrl+Z / Ctrl+Y: 枠の編集中でなければ、ホストの元に戻す / やり直す
+   */
+  function onHostedKey(ev) {
+    if (!HAS_PARENT) return;
+    var k = ev.key;
+    var mod = ev.ctrlKey || ev.metaKey;
+    if (k === 'F5' || (mod && (k === 'r' || k === 'R'))) {
+      ev.preventDefault();
+      if (edit.hosted && k === 'F5') postHost({ type: 'present' });
+      return;
+    }
+    if (!edit.hosted || !mod || isTyping(ev.target)) return;
+    if (k === 'z' || k === 'Z') { ev.preventDefault(); postHost({ type: ev.shiftKey ? 'redo' : 'undo' }); }
+    else if (k === 'y' || k === 'Y') { ev.preventDefault(); postHost({ type: 'redo' }); }
   }
 
   /** ホスト (親ウィンドウ) からのメッセージ */
@@ -3318,7 +3344,8 @@ body.deck-print-mode {
     if (d.type === 'edit') setEditMode(d.on, true);
     else if (d.type === 'goto') go(d.index || 0, d.step == null ? 0 : d.step, true);
     else if (d.type === 'error') toast(d.message || 'エディタ側で反映できませんでした');
-    else if (d.type === 'saved') toast('保存しました');
+    else if (d.type === 'saved') { if (edit.on) setEditMode(false); toast('保存しました'); }
+    else if (d.type === 'present') hostPresenting = !!d.on;
   }
 
   // ------------------------------------------------------------------
@@ -3440,6 +3467,7 @@ body.deck-print-mode {
     }
     if (MODE !== 'embed') {
       document.addEventListener('keydown', onKey);
+      document.addEventListener('keydown', onHostedKey, true);
       // 最初のクリックで全画面 (発表モード)。デモのボタン・リンク・編集中の枠のクリックは除く
       document.addEventListener('click', function (ev) {
         var t = ev.target;

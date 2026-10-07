@@ -80,6 +80,9 @@ iframe は opaque origin (sandbox で allow-same-origin なし) なので `targe
 | `edit-mode` | `{ on }` | デッキ内で E キーにより編集モードが切り替わったとき |
 | `change` | `{ slide, index, html, before, text }` | 編集の確定時 (Enter / フォーカスが外れた / 入力が 0.6 秒止まった) |
 | `save` | `{}` | iframe 内で Ctrl+S が押されたとき |
+| `undo` / `redo` | `{}` | 枠の編集中でないときの Ctrl+Z / Ctrl+Y (Ctrl+Shift+Z)。ホストの履歴で戻す・やり直す |
+| `present` | `{}` | iframe 内で F5 が押されたとき (ホストに発表 = 全画面表示を頼む) |
+| `present-exit` | `{}` | ホストが発表中 (`present {on:true}` を受けた後) に、枠の外で Esc が押されたとき |
 
 - `change.html` … 要素の新しい中身 (innerHTML)。`script` / イベント属性などは除去済み
 - `change.before` … **ホストのソースにあるはずの現在の文字** (空白を圧縮したテキスト)。照合に使う
@@ -92,10 +95,14 @@ iframe は opaque origin (sandbox で allow-same-origin なし) なので `targe
 | `edit` | `{ on: boolean }` | 編集モードの切り替え (ホストのボタン) |
 | `goto` | `{ index, step }` | プレビュー再読み込み後に元の位置へ戻す |
 | `error` | `{ message }` | 反映できなかったことをデッキ上に表示する |
-| `saved` | `{}` | 保存完了をデッキ上に表示する |
+| `saved` | `{}` | 保存完了をデッキ上に表示する。編集モードなら終了する |
+| `present` | `{ on: boolean }` | 発表 (全画面) 表示の開始・終了を知らせる (発表中の Esc を `present-exit` にする) |
 
 ホストから最初のメッセージを受け取った時点で、デッキは「ホストあり」として動く
 (Ctrl+S をホストに渡す、バッジに「保存はエディタで」と出す)。
+
+iframe の中では、F5 / Ctrl+R によるブラウザの再読み込みを常に止める (iframe 内で押すと、ホストのページ全体が読み込み直されるため)。
+保存できたら (ホストなし: 書き込みの成功時、ホストあり: `saved` の受信時) 編集モードは自動で終了する。
 
 ## ソースへの反映
 
