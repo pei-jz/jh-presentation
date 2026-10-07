@@ -7,19 +7,31 @@
     "url": "https://github.com/pei-jz/jh-presentation",
     "source": "github"
   },
-  "version": "0.5.2",
+  "version": "0.6.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "jh-presentation",
-      "version": "0.5.2",
+      "version": "0.6.0",
       "transport": {
         "type": "stdio"
       },
       "environmentVariables": [
         {
           "name": "JH_PRESENTATION_HOME",
-          "description": "Folder where decks are saved (default: ~/jh-presentation)",
+          "description": "Settings folder (brand, themes, templates); decks go here when the client has no workspace",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "JH_PRESENTATION_DECKS_DIR",
+          "description": "Folder name for decks inside the client's workspace (default: decks)",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "JH_PRESENTATION_ROOTS",
+          "description": "Set to off to always save decks in the settings folder instead of the client's workspace",
           "isRequired": false,
           "format": "string"
         },

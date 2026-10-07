@@ -8,9 +8,12 @@ Decks record the engine version that built them (`<meta name="generator">`). Wri
 engine; run `upgrade_deck` / `npm run upgrade` to move a deck to the current engine. The edit protocol version is
 documented in `docs/edit-protocol.md`; hosts and save servers refuse edits from decks with a different version.
 
-## [Unreleased]
+## [0.6.0]
 
 ### Changed
+- Decks are saved in the AI client's current workspace (`decks/`, reported through MCP roots) when there is one, or in
+  the folder a tool is given with `dir`; the workspace setting is the fallback and keeps the brand, themes and
+  templates shared by every project. `--decks-dir` / `--no-roots` adjust this.
 - Saving (Ctrl+S or the Save button) ends edit mode once the deck is saved.
 - The presenter view can drive the presentation: arrow keys, a click on the current or next slide,
   and Previous / Next buttons.

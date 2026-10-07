@@ -1,10 +1,14 @@
-// ワークスペース (デッキの保存先) とデッキの読み書き
+// ワークスペース (設定とデッキの保存先) とデッキの読み書き
 //
-// <ワークスペース>/
+// <ワークスペース>/        設定 (どのプロジェクトからも共通で使う)。デッキの既定の保存先も兼ねる
 //   2026-10-02-xxx.html   デッキ (1 ファイルで完結。エンジン・テーマ・ブランド・画像を埋め込み)
 //   brand/                名前・ロゴ (brand.json)。最初は同梱のサンプルがコピーされる
 //   themes/               自作テーマ (*.css)
 //   prompts/              チーム・個人の依頼文テンプレート (*.md)
+//
+// デッキの保存先は呼び出しごとに変えられる (AI クライアントの作業フォルダの decks/ など)。
+// そのときデッキの関数には文字列の代わりに「場所」{ dir, themeDirs, brandDir } を渡す (deckPlace)。
+// プロジェクトに brand/ や themes/ があればそちらを優先し、なければワークスペースのものを使う。
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import os from 'node:os';
@@ -36,6 +40,29 @@ export const brandDir = (ws) => path.join(ws, 'brand');
 export const themesDir = (ws) => path.join(ws, 'themes');
 export const promptsDir = (ws) => path.join(ws, 'prompts');
 
+/**
+ * デッキの置き場所。ワークスペース (文字列) ならその中、場所 (deckPlace の戻り値) ならそのとおり。
+ * @returns {{ dir: string, themeDirs: string[], brandDir: string }}
+ */
+export function placeOf(ws) {
+  if (typeof ws === 'string') return { dir: ws, themeDirs: [themesDir(ws)], brandDir: brandDir(ws) };
+  return ws;
+}
+
+/**
+ * プロジェクトのフォルダにデッキを置くときの場所。
+ *   dir      デッキを置くフォルダ
+ *   settings 共通の設定 (ワークスペース)
+ *   project  プロジェクトのフォルダ (なければ null)。brand/ themes/ があれば設定より優先する
+ */
+export function deckPlace({ dir, settings, project = null }) {
+  const themeDirs = [];
+  if (project && fs.existsSync(themesDir(project))) themeDirs.push(themesDir(project));
+  themeDirs.push(themesDir(settings));
+  const projectBrand = project && fs.existsSync(path.join(brandDir(project), 'brand.json'));
+  return { dir: path.resolve(dir), themeDirs, brandDir: projectBrand ? brandDir(project) : brandDir(settings), project };
+}
+
 /** ワークスペースを用意し、旧形式 (decks/<name>/) のデッキがあれば 1 ファイル形式に移行する */
 export function ensureWorkspace(ws) {
   fs.mkdirSync(ws, { recursive: true });
@@ -55,13 +82,14 @@ export function ensureWorkspace(ws) {
 
 /** デッキの組み立てに必要な情報 (自作テーマの場所・ブランド) */
 export function ctxFor(ws) {
-  return { themeDirs: [themesDir(ws)], brandData: loadBrand(brandDir(ws)) };
+  const p = placeOf(ws);
+  return { themeDirs: p.themeDirs, brandData: loadBrand(p.brandDir) };
 }
 
 export function deckFile(ws, name) {
   const base = String(name).replace(/\.html$/i, '');
   if (!/^[\w.-]+$/.test(base) || base.startsWith('.')) throw new Error('デッキ名が不正です: ' + name);
-  return path.join(ws, base + '.html');
+  return path.join(placeOf(ws).dir, base + '.html');
 }
 
 function readDeckHtml(ws, name) {
@@ -90,13 +118,21 @@ function initialSlides(title, date) {
 export function listThemes(ws) {
   const builtin = readThemes(BUILTIN_THEMES_DIR).map((t) => ({ ...t, custom: false }));
   const names = new Set(builtin.map((t) => t.name));
-  const custom = readThemes(themesDir(ws)).filter((t) => !names.has(t.name)).map((t) => ({ ...t, custom: true }));
+  // 自作テーマはプロジェクト → ワークスペースの順 (同じ名前なら先に見つかった方)
+  const custom = [];
+  placeOf(ws).themeDirs.forEach((dir) => {
+    readThemes(dir).forEach((t) => {
+      if (names.has(t.name)) return;
+      names.add(t.name);
+      custom.push({ ...t, custom: true });
+    });
+  });
   return [...builtin, ...custom];
 }
 export const themeNames = (ws) => listThemes(ws).map((t) => t.name);
 
 export function assertTheme(ws, theme) {
-  if (theme && !findThemeFile(theme, [themesDir(ws)])) {
+  if (theme && !findThemeFile(theme, placeOf(ws).themeDirs)) {
     throw new Error(`テーマがありません: ${theme} (利用できるテーマ: ${themeNames(ws).join(', ')})`);
   }
 }
@@ -117,11 +153,12 @@ export function saveTheme(ws, { name, label, description, tags = [], css }) {
 // デッキ
 // ---------------------------------------------------------------------------
 export function listDecks(ws) {
-  if (!fs.existsSync(ws)) return [];
-  return fs.readdirSync(ws)
+  const dir = placeOf(ws).dir;
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir)
     .filter((f) => f.endsWith('.html'))
     .map((f) => {
-      const file = path.join(ws, f);
+      const file = path.join(dir, f);
       const html = fs.readFileSync(file, 'utf8');
       if (!isDeckHtml(html)) return null;
       const d = parseDeck(html);
@@ -139,6 +176,7 @@ export function createDeck(ws, { name, title, theme = 'default', transition = 'f
   const base = /^\d{4}-\d{2}-\d{2}-/.test(name) ? name : `${today()}-${name}`;
   const file = deckFile(ws, base);
   if (fs.existsSync(file)) throw new Error('すでに存在します: ' + base);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
   const ctx = ctxFor(ws);
   fs.writeFileSync(file, buildDeck({
     title, theme, transition, brand: brand || ctx.brandData.position, autoFullscreen,
@@ -158,7 +196,7 @@ export function revisionOf(html) {
 }
 
 const HISTORY_KEEP = 20;
-export const historyDir = (ws, name) => path.join(ws, '.history', path.basename(deckFile(ws, name), '.html'));
+export const historyDir = (ws, name) => path.join(placeOf(ws).dir, '.history', path.basename(deckFile(ws, name), '.html'));
 
 /**
  * デッキを安全に保存する

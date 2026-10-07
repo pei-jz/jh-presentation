@@ -91,7 +91,14 @@ claude mcp add jh-presentation -e JH_PRESENTATION_HOME=~/decks -- npx -y jh-pres
 }
 ```
 
-Decks are saved in `JH_PRESENTATION_HOME` (default `~/jh-presentation`), or the folder given with `--workspace <dir>`.
+Where decks go, decided per call — no need to change the MCP settings to save somewhere else:
+
+1. the `dir` a tool is given ("make it in this project's slides folder"),
+2. the `decks/` folder of the AI client's current workspace (Claude Code, VS Code and other clients that report MCP roots),
+3. the workspace: `JH_PRESENTATION_HOME` (default `~/jh-presentation`) or `--workspace <dir>`, for clients without one (Claude Desktop).
+
+The workspace also holds the brand, custom themes and request templates shared by every project; a project's own `brand/` or `themes/` folder wins.
+`--decks-dir <name>` (`JH_PRESENTATION_DECKS_DIR`) renames `decks/`, and `--no-roots` (`JH_PRESENTATION_ROOTS=off`) always saves to the workspace.
 
 ## What the AI can do (MCP tools)
 

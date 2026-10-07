@@ -8,13 +8,29 @@ AI クライアント (Claude Desktop / Claude Code / VS Code など) から、H
 - Node.js 20 以上
 - Chrome または Edge (スクリーンショット・検査・PDF 出力に使用。別の場所にある場合は環境変数 `CHROME_PATH`)
 
-## ワークスペース (デッキの保存先)
+## デッキの保存先
+
+デッキは、呼び出しごとに次の順で決まる場所に保存される。出力先を変えるたびに MCP の設定を変える必要はない。
+
+1. **ツールの `dir` 引数** — 「このプロジェクトの slides に作って」のようにユーザーが場所を指定したとき (作業フォルダからの相対パスか絶対パス)
+2. **AI クライアントの作業フォルダの `decks/`** — Claude Code・VS Code など、作業フォルダを MCP の roots で伝えるクライアント
+3. **ワークスペース** — 作業フォルダのない Claude Desktop など
+
+| 設定 | 内容 |
+|---|---|
+| `--decks-dir <名前>` / `JH_PRESENTATION_DECKS_DIR` | 作業フォルダの中のフォルダ名 (既定: `decks`) |
+| `--no-roots` / `JH_PRESENTATION_ROOTS=off` | 作業フォルダを使わず、いつもワークスペースに保存する |
+
+## ワークスペース (設定の置き場所)
 
 優先順: `--workspace <dir>` 引数 → 環境変数 `JH_PRESENTATION_HOME` → `~/jh-presentation`
 
+ブランド・自作テーマ・依頼文テンプレートはここに置き、どのプロジェクトからも共通で使う。
+プロジェクト (作業フォルダ) に `brand/` や `themes/` があれば、そちらが優先される。
+
 ```
 <workspace>/
-  2026-10-02-xxx.html   デッキ (1 ファイルで完結。そのまま配布・発表できる)
+  2026-10-02-xxx.html   デッキ (作業フォルダのないクライアントの場合。1 ファイルで完結し、そのまま配布・発表できる)
   2026-10-02-xxx.pdf    export_deck の出力
   brand/                名前・ロゴ (brand.json + ロゴ画像)。最初はサンプルがコピーされる
   themes/               自作テーマ (create_theme で保存される)
@@ -79,7 +95,7 @@ AI が `get_theme_guide` → `create_theme` → `preview_themes` で作成・確
 
 | 配布方法 | 指定 | 備考 |
 |---|---|---|
-| **npm (推奨)** | `npx -y jh-presentation` | 公開版。バージョンを固定するなら `jh-presentation@0.5.2` |
+| **npm (推奨)** | `npx -y jh-presentation` | 公開版。バージョンを固定するなら `jh-presentation@0.6.0` |
 | GitHub | `npx -y github:pei-jz/jh-presentation` | 最新の main。起動のたびに取得し直すことがあり遅い |
 | ローカルのリポジトリ | `node C:/path/to/jh-presentation/mcp/server.mjs` | 開発用。起動が速く、手元の変更がすぐ反映される |
 | 固定インストール | `npm install -g jh-presentation` → `jh-presentation` | 起動が速い。更新は手動 |

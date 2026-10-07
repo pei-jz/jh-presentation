@@ -4,23 +4,29 @@
 // LLM は接続した AI クライアント側 (Claude Desktop / Claude Code / VS Code など) が担当し、
 // このサーバーはデッキの作成・確認・出力の「道具」だけを提供する。API キーは不要。
 //
-//   npx -y jh-presentation --workspace <デッキの保存先>   (または環境変数 JH_PRESENTATION_HOME)
+//   npx -y jh-presentation --workspace <設定の置き場所>   (または環境変数 JH_PRESENTATION_HOME)
 //
-// デッキは 1 ファイルで完結する HTML (<ワークスペース>/<name>.html)。
+// デッキは 1 ファイルで完結する HTML。保存先は呼び出しごとに次の順で決める:
+//   1. ツールの dir 引数
+//   2. AI クライアントの作業フォルダ (MCP の roots) の decks/   (--decks-dir / JH_PRESENTATION_DECKS_DIR で名前を変更、
+//      --no-roots / JH_PRESENTATION_ROOTS=off で使わない)
+//   3. ワークスペース (--workspace。作業フォルダのない Claude Desktop など)
+// ブランド・自作テーマ・依頼文テンプレートはワークスペースに置き、どのプロジェクトからも共通で使う
+// (プロジェクトに brand/ themes/ があればそちらを優先)。
 // 注意: stdout は MCP の通信に使うため、ログは必ず stderr (console.error) に出す。
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
   PKG_ROOT, resolveWorkspace, ensureWorkspace, ctxFor, listDecks, createDeck, readDeck, writeDeck,
   replaceSlide, addAsset, listHistory, restoreHistory, saveDeckFile, isBrowserSaved, deckFile, listThemes, assertTheme, saveTheme, readGuide, readThemeGuide,
-  brandDir, themesDir, promptsDir,
+  brandDir, themesDir, promptsDir, deckPlace, placeOf,
 } from './workspace.mjs';
 import { loadPromptTemplates, renderPrompt } from './prompts.mjs';
 import { buildGallery } from '../tools/lib/gallery.mjs';
@@ -32,6 +38,18 @@ import { auditDeck, screenshotDeck, exportPdf, extractFromSavedPage, closeBrowse
 const pkg = JSON.parse(fs.readFileSync(path.join(PKG_ROOT, 'package.json'), 'utf8'));
 const WS = resolveWorkspace();
 const setup = ensureWorkspace(WS);
+
+// プロジェクトの中のデッキのフォルダ名と、AI クライアントの作業フォルダ (roots) を使うか
+function option(name, envName) {
+  const argv = process.argv.slice(2);
+  const i = argv.indexOf('--' + name);
+  if (i >= 0 && argv[i + 1]) return argv[i + 1];
+  const eq = argv.find((a) => a.startsWith(`--${name}=`));
+  if (eq) return eq.slice(name.length + 3);
+  return process.env[envName];
+}
+const DECKS_SUBDIR = option('decks-dir', 'JH_PRESENTATION_DECKS_DIR') || 'decks';
+const USE_ROOTS = !process.argv.includes('--no-roots') && !/^(off|false|0|no)$/i.test(process.env.JH_PRESENTATION_ROOTS || '');
 const GALLERY_DIR = path.join(os.tmpdir(), 'jh-presentation-gallery');
 
 const MCP_WORKFLOW = `
@@ -40,6 +58,8 @@ const MCP_WORKFLOW = `
 1. このガイドを読む (get_guide)。
 2. 依頼内容 (目的・聞き手・持ち時間) から構成案を作る。曖昧で長い発表なら、構成案をユーザーに確認してから進める。
 3. create_deck でデッキを作る (英数字の name と日本語の title)。
+   保存先は、AI クライアントの作業フォルダがあればその中の decks/、なければ既定のワークスペース。
+   ユーザーが場所を指定したら、どのデッキのツールにも dir (フォルダ) を渡す (作業フォルダからの相対パスか絶対パス)。
    テーマは内容・聞き手に合わせて list_themes から選ぶ。ユーザーが見た目で選びたい場合は open_theme_gallery を使う。
    名前・ロゴの帯を入れる場合は brand を指定する (header / footer / both)。
 4. write_deck でスライドを書く。slides には <section class="slide"> の並びだけを渡す (外枠・エンジンはサーバーが埋め込む)。
@@ -84,6 +104,41 @@ function tool(name, config, handler) {
   });
 }
 
+/** AI クライアントの作業フォルダ (MCP の roots の最初の file: フォルダ)。なければ null */
+async function clientRoot() {
+  if (!USE_ROOTS) return null;
+  const caps = server.server.getClientCapabilities && server.server.getClientCapabilities();
+  if (!caps || !caps.roots) return null;
+  try {
+    const { roots } = await server.server.listRoots(undefined, { timeout: 3000 });
+    const first = (roots || []).find((r) => /^file:/i.test(r.uri));
+    return first ? fileURLToPath(first.uri) : null;
+  } catch (e) {
+    console.error('[jh-presentation] roots を取得できません', e.message || e);
+    return null;
+  }
+}
+
+const expandHome = (p) => (p.startsWith('~') ? path.join(os.homedir(), p.slice(1)) : p);
+const isInside = (child, parent) => {
+  const rel = path.relative(parent, child);
+  return !rel.startsWith('..') && !path.isAbsolute(rel);
+};
+
+/**
+ * デッキの保存先。dir 引数 → 作業フォルダの decks/ → ワークスペース の順。
+ * @returns {Promise<string | object>} workspace.mjs のデッキの関数に渡す「場所」
+ */
+async function placeFor(dir) {
+  const root = await clientRoot();
+  if (dir) {
+    const abs = path.resolve(root || WS, expandHome(dir));
+    return deckPlace({ dir: abs, settings: WS, project: root && isInside(abs, root) ? root : null });
+  }
+  if (root) return deckPlace({ dir: path.join(root, DECKS_SUBDIR), settings: WS, project: root });
+  return WS;
+}
+
 function deckInfo(d) {
   return {
     name: d.name, title: d.title, theme: d.theme, brand: d.brand, transition: d.transition, autoFullscreen: d.autoFullscreen,
@@ -99,6 +154,9 @@ function openInBrowser(target) {
 }
 
 const deckName = z.string().describe('デッキ名 (list_decks / create_deck が返す name。.html は不要)');
+const dirSchema = z.string().optional().describe(
+  'デッキのフォルダ (省略時: AI クライアントの作業フォルダの decks/、作業フォルダがなければ既定のワークスペース)。' +
+  '作業フォルダからの相対パスか絶対パス。ユーザーが保存先を指定したときだけ渡す');
 const brandSchema = z.enum(BRAND_POSITIONS).describe('ブランド枠 (名前・ロゴ): none / header (上) / footer (下) / both (上下)');
 const transitionSchema = z.enum(TRANSITIONS).describe('スライド切り替え効果');
 const autoFullscreenSchema = z.boolean().describe('発表モード: 開いた後の最初の → キー・クリックで全画面にする (既定 false)');
@@ -138,7 +196,7 @@ tool('list_themes', {
   title: 'テーマ一覧',
   description: '利用できるデザインテーマ (同梱 + 自作。名前・表示名・雰囲気の説明・タグ)。内容や聞き手に合うテーマを選ぶときに使う。',
   annotations: { readOnlyHint: true },
-}, async () => ({ content: [text({ themes: listThemes(WS), customThemeDir: themesDir(WS) })] }));
+}, async () => ({ content: [text({ themes: listThemes(await placeFor()), customThemeDir: themesDir(WS) })] }));
 
 function galleryThemes(names) {
   const all = listThemes(WS);
@@ -242,10 +300,12 @@ tool('list_templates', {
 // ---------------------------------------------------------------------------
 tool('list_decks', {
   title: 'デッキ一覧',
-  description: 'ワークスペースにあるデッキの一覧 (新しい順)。',
+  description: 'デッキの一覧 (新しい順)。保存先のフォルダも返す。',
+  inputSchema: { dir: dirSchema },
   annotations: { readOnlyHint: true },
-}, async () => {
-  const result = { workspace: WS, decks: listDecks(WS) };
+}, async ({ dir }) => {
+  const P = await placeFor(dir);
+  const result = { folder: placeOf(P).dir, settings: WS, decks: listDecks(P) };
   if (setup.migrated.length) result.migrated = `旧形式から 1 ファイル形式に変換したデッキ: ${setup.migrated.join(', ')}`;
   if (setup.legacy.length) {
     result.legacyFolders = `旧形式のフォルダが残っています (${setup.legacy.join(', ')})。変換済みなので、ユーザーが不要なら削除してよい`;
@@ -263,10 +323,12 @@ tool('create_deck', {
     transition: transitionSchema.optional(),
     brand: brandSchema.optional(),
     autoFullscreen: autoFullscreenSchema.optional(),
+    dir: dirSchema,
   },
-}, async ({ name, title, theme, transition, brand, autoFullscreen }) => {
-  const { name: created } = createDeck(WS, { name, title, theme, transition, brand, autoFullscreen });
-  return { content: [text({ created: deckInfo(readDeck(WS, created)), next: 'write_deck でスライドを書いてください' })] };
+}, async ({ name, title, theme, transition, brand, autoFullscreen, dir }) => {
+  const P = await placeFor(dir);
+  const { name: created } = createDeck(P, { name, title, theme, transition, brand, autoFullscreen });
+  return { content: [text({ created: deckInfo(readDeck(P, created)), next: 'write_deck でスライドを書いてください' })] };
 });
 
 tool('read_deck', {
@@ -274,10 +336,10 @@ tool('read_deck', {
   description:
     'デッキの編集可能な部分 (スライド HTML・デッキ専用 CSS / JS・設定・埋め込み画像名) と revision を返す。修正前に必ず読むこと。' +
     'write_deck / replace_slide に revision を渡すと、読んだ後に他で変更されていた場合に上書きを防げる。',
-  inputSchema: { name: deckName },
+  inputSchema: { name: deckName, dir: dirSchema },
   annotations: { readOnlyHint: true },
-}, async ({ name }) => {
-  const d = readDeck(WS, name);
+}, async ({ name, dir }) => {
+  const d = readDeck(await placeFor(dir), name);
   return {
     content: [
       text({ ...deckInfo(d), revision: d.revision, assets: d.assetNames, engineVersion: d.version, latestVersion: pkg.version }),
@@ -308,9 +370,10 @@ tool('write_deck', {
     brand: brandSchema.optional(),
     autoFullscreen: autoFullscreenSchema.optional(),
     revision: revisionSchema,
+    dir: dirSchema,
   },
-}, async ({ name, revision, ...fields }) => {
-  const d = writeDeck(WS, name, fields, { revision });
+}, async ({ name, revision, dir, ...fields }) => {
+  const d = writeDeck(await placeFor(dir), name, fields, { revision });
   return { content: [text({ saved: deckInfo(d), revision: d.revision, next: 'audit_deck と screenshot_deck で確認してください' })] };
 });
 
@@ -322,9 +385,10 @@ tool('replace_slide', {
     target: z.union([z.number().int().min(1), z.string()]).describe('スライド番号 (1 始まり) または id'),
     slide: z.string().describe('新しい <section class="slide">...</section> (1 枚分)'),
     revision: revisionSchema,
+    dir: dirSchema,
   },
-}, async ({ name, target, slide, revision }) => {
-  const d = replaceSlide(WS, name, target, slide, { revision });
+}, async ({ name, target, slide, revision, dir }) => {
+  const d = replaceSlide(await placeFor(dir), name, target, slide, { revision });
   return { content: [text({ saved: deckInfo(d), revision: d.revision })] };
 });
 
@@ -337,9 +401,10 @@ tool('add_asset', {
     name: deckName,
     file: z.string().describe('埋め込むファイルの絶対パス'),
     as: z.string().optional().describe('参照名 (省略時はファイル名)'),
+    dir: dirSchema,
   },
-}, async ({ name, file, as }) => {
-  const key = addAsset(WS, name, file, as);
+}, async ({ name, file, as, dir }) => {
+  const key = addAsset(await placeFor(dir), name, file, as);
   return { content: [text({ asset: key, usage: `<img data-asset="${key}" alt="">` })] };
 });
 
@@ -348,26 +413,27 @@ tool('upgrade_deck', {
   description:
     'デッキに埋め込まれたエンジン・テーマ・ブランド設定を最新にする (スライドの内容は変わらないが、見た目が変わる場合がある)。' +
     'ユーザーが最新化を求めたとき、またはブランド設定 (brand.json) を変えたときだけ使う。name 省略時は全デッキ。',
-  inputSchema: { name: deckName.optional() },
-}, async ({ name }) => {
-  const names = name ? [name] : listDecks(WS).map((d) => d.name);
-  names.forEach((n) => writeDeck(WS, n, {}, { upgrade: true }));
+  inputSchema: { name: deckName.optional(), dir: dirSchema },
+}, async ({ name, dir }) => {
+  const P = await placeFor(dir);
+  const names = name ? [name] : listDecks(P).map((d) => d.name);
+  names.forEach((n) => writeDeck(P, n, {}, { upgrade: true }));
   return { content: [text({ upgraded: names, version: pkg.version, next: 'audit_deck と screenshot_deck で見た目を確認してください' })] };
 });
 
 tool('list_history', {
   title: '保存履歴',
   description: 'デッキの保存履歴 (書き込み前の版。新しい順、最大 20 件)。',
-  inputSchema: { name: deckName },
+  inputSchema: { name: deckName, dir: dirSchema },
   annotations: { readOnlyHint: true },
-}, async ({ name }) => ({ content: [text({ history: listHistory(WS, name) })] }));
+}, async ({ name, dir }) => ({ content: [text({ history: listHistory(await placeFor(dir), name) })] }));
 
 tool('restore_history', {
   title: '履歴の版に戻す',
   description: '保存履歴の版にデッキを戻す (戻す前の内容も履歴に残るので、やり直しできる)。',
-  inputSchema: { name: deckName, id: z.string().describe('list_history の id') },
-}, async ({ name, id }) => {
-  const d = restoreHistory(WS, name, id);
+  inputSchema: { name: deckName, id: z.string().describe('list_history の id'), dir: dirSchema },
+}, async ({ name, id, dir }) => {
+  const d = restoreHistory(await placeFor(dir), name, id);
   return { content: [text({ restored: deckInfo(d), revision: d.revision })] };
 });
 
@@ -382,10 +448,10 @@ tool('audit_deck', {
     'エンジンの警告 (warnings)、外部への通信 (externalRequests。オフラインで動かなくなるので不可)。' +
     'ok: true は「検査した項目で問題が見つからなかった」という意味で、見た目の良し悪しは screenshot_deck で確認すること。' +
     '意図的な重なり・はみ出しは .allow-overlap / .allow-overflow で除外できる。',
-  inputSchema: { name: deckName },
+  inputSchema: { name: deckName, dir: dirSchema },
   annotations: { readOnlyHint: true },
-}, async ({ name }) => {
-  const r = await auditDeck(readDeck(WS, name).file);
+}, async ({ name, dir }) => {
+  const r = await auditDeck(readDeck(await placeFor(dir), name).file);
   return { content: [text(r)] };
 });
 
@@ -399,10 +465,11 @@ tool('screenshot_deck', {
     slides: z.array(z.number().int().min(1)).max(12).optional().describe('スライド番号 (1 始まり) の配列。最大 12 枚'),
     step: z.number().int().min(0).optional().describe('表示するステップ数 (省略時は最終状態)'),
     scale: z.number().min(0.2).max(1).optional().describe('画像の縮尺 (既定 0.5 = 960x540)'),
+    dir: dirSchema,
   },
   annotations: { readOnlyHint: true },
-}, async ({ name, slides, step, scale }) => {
-  const r = await screenshotDeck(readDeck(WS, name).file, { slides, step: step == null ? 'final' : step, scale: scale || 0.5 });
+}, async ({ name, slides, step, scale, dir }) => {
+  const r = await screenshotDeck(readDeck(await placeFor(dir), name).file, { slides, step: step == null ? 'final' : step, scale: scale || 0.5 });
   const content = [];
   for (const img of r.images) {
     content.push(text(`スライド ${img.slide} / ${r.total}`));
@@ -418,16 +485,24 @@ tool('screenshot_deck', {
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // ローカル配信 (open_deck 用): ブラウザで編集した文字を Ctrl+S で元のファイルに直接保存できるようにする
-//   127.0.0.1 のランダムなポートで、ワークスペース直下のデッキだけを配信する。MCP サーバーの終了とともに止まる
+//   127.0.0.1 のランダムなポートで、open_deck で開いたデッキだけを配信する。MCP サーバーの終了とともに止まる
 // ---------------------------------------------------------------------------
 let deckServer = null;
+// 配信してよいデッキのフォルダ (open_deck で開いたもの)。URL は /<番号>/<デッキ>.html
+const servedDirs = [];
+function servedUrlPath(file) {
+  const dir = path.dirname(file);
+  let i = servedDirs.indexOf(dir);
+  if (i < 0) i = servedDirs.push(dir) - 1;
+  return `/${i}/${path.basename(file)}`;
+}
 async function ensureDeckServer() {
   if (deckServer) return deckServer;
   const token = createSaveToken();
   const fileForUrl = (p) => {
-    const m = /^\/([\w.-]+\.html)$/.exec(p);
-    if (!m) return null;
-    try { const f = deckFile(WS, m[1]); return fs.existsSync(f) ? f : null; } catch { return null; }
+    const m = /^\/(\d+)\/([\w.-]+\.html)$/.exec(p);
+    if (!m || !servedDirs[Number(m[1])]) return null;
+    try { const f = deckFile(servedDirs[Number(m[1])], m[2]); return fs.existsSync(f) ? f : null; } catch { return null; }
   };
   const srv = http.createServer((req, res) => {
     const p = decodeURIComponent(new URL(req.url, 'http://127.0.0.1').pathname);
@@ -436,7 +511,7 @@ async function ensureDeckServer() {
         token,
         resolveFile: fileForUrl,
         read: (f) => fs.readFileSync(f, 'utf8'),
-        write: (f, oldHtml, newHtml) => saveDeckFile(WS, path.basename(f, '.html'), f, oldHtml, newHtml),
+        write: (f, oldHtml, newHtml) => saveDeckFile(path.dirname(f), path.basename(f, '.html'), f, oldHtml, newHtml),
       });
     }
     const file = fileForUrl(p);
@@ -460,13 +535,14 @@ tool('open_deck', {
   inputSchema: {
     name: deckName,
     fullscreen: z.boolean().optional().describe('全画面の専用ウィンドウで開く (発表用。F11 / Esc で解除)'),
+    dir: dirSchema,
   },
-}, async ({ name, fullscreen }) => {
-  const d = readDeck(WS, name);
+}, async ({ name, fullscreen, dir }) => {
+  const d = readDeck(await placeFor(dir), name);
   let url;
   try {
     const { port } = await ensureDeckServer();
-    url = `http://127.0.0.1:${port}/${path.basename(d.file)}`;
+    url = `http://127.0.0.1:${port}${servedUrlPath(d.file)}`;
   } catch (e) {
     console.error('[open_deck] ローカル配信を開始できないため file:// で開きます', e);
     url = pathToFileURL(d.file).href;
@@ -489,24 +565,25 @@ tool('repair_deck', {
   description:
     'ブラウザの「名前を付けて保存」で表示中の状態のまま保存されて壊れたデッキを、元の形式に復旧する (list_decks で broken と出るもの)。' +
     '壊れたファイルは履歴に残る。復旧後は audit_deck と screenshot_deck で確認する。',
-  inputSchema: { name: deckName },
-}, async ({ name }) => {
-  const file = deckFile(WS, name);
+  inputSchema: { name: deckName, dir: dirSchema },
+}, async ({ name, dir }) => {
+  const P = await placeFor(dir);
+  const file = deckFile(P, name);
   if (!fs.existsSync(file)) throw new Error('デッキが見つかりません: ' + name);
   const html = fs.readFileSync(file, 'utf8');
   if (!isBrowserSaved(html)) throw new Error('このデッキはブラウザ保存で壊れた形跡がありません (復旧は不要です)');
   const parts = await extractFromSavedPage(html);
-  saveDeckFile(WS, name, file, html, buildDeck(parts, ctxFor(WS)));
-  const d = readDeck(WS, name);
+  saveDeckFile(P, name, file, html, buildDeck(parts, ctxFor(P)));
+  const d = readDeck(P, name);
   return { content: [text({ repaired: deckInfo(d), notes: parts.notes, next: 'audit_deck と screenshot_deck で確認してください' })] };
 });
 
 tool('export_deck', {
   title: 'PDF に出力',
   description: 'デッキを 16:9 の PDF に出力する (アニメーションなし、全ステップ表示)。HTML はデッキファイル自体がそのまま配布できる。',
-  inputSchema: { name: deckName },
-}, async ({ name }) => {
-  const d = readDeck(WS, name);
+  inputSchema: { name: deckName, dir: dirSchema },
+}, async ({ name, dir }) => {
+  const d = readDeck(await placeFor(dir), name);
   const out = d.file.replace(/\.html$/i, '.pdf');
   await exportPdf(d.file, out);
   return { content: [text({ exported: out, html: d.file })] };
@@ -524,5 +601,5 @@ process.on('SIGTERM', shutdown);
 process.stdin.on('close', shutdown);
 
 await server.connect(new StdioServerTransport());
-console.error(`[jh-presentation] MCP server v${pkg.version} ready. workspace: ${WS}`);
+console.error(`[jh-presentation] MCP server v${pkg.version} ready. workspace: ${WS} / decks: ${USE_ROOTS ? `<作業フォルダ>/${DECKS_SUBDIR} (なければワークスペース)` : 'ワークスペース'}`);
 if (setup.migrated.length) console.error(`[jh-presentation] 旧形式から変換: ${setup.migrated.join(', ')}`);
