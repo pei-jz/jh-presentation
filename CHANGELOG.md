@@ -8,7 +8,7 @@ Decks record the engine version that built them (`<meta name="generator">`). Wri
 engine; run `upgrade_deck` / `npm run upgrade` to move a deck to the current engine. The edit protocol version is
 documented in `docs/edit-protocol.md`; hosts and save servers refuse edits from decks with a different version.
 
-## [Unreleased]
+## [0.7.0]
 
 ### Added
 - `write_deck` and `replace_slide` audit the deck after saving and return the result as `audit` (one line when

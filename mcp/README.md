@@ -97,7 +97,7 @@ AI が `get_theme_guide` → `create_theme` → `preview_themes` で作成・確
 
 | 配布方法 | 指定 | 備考 |
 |---|---|---|
-| **npm (推奨)** | `npx -y jh-presentation` | 公開版。バージョンを固定するなら `jh-presentation@0.6.0` |
+| **npm (推奨)** | `npx -y jh-presentation` | 公開版。バージョンを固定するなら `jh-presentation@0.7.0` |
 | GitHub | `npx -y github:pei-jz/jh-presentation` | 最新の main。起動のたびに取得し直すことがあり遅い |
 | ローカルのリポジトリ | `node C:/path/to/jh-presentation/mcp/server.mjs` | 開発用。起動が速く、手元の変更がすぐ反映される |
 | 固定インストール | `npm install -g jh-presentation` → `jh-presentation` | 起動が速い。更新は手動 |
