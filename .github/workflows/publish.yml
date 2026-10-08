@@ -28,7 +28,24 @@ jobs:
         run: test "v$(node -p "require('./package.json').version")" = "${GITHUB_REF_NAME}"
       - run: npm test
       - name: Publish to npm
-        run: npm publish --access public   # provenance は Trusted Publishing で自動的に付く
+        # 再実行したときに公開済みの版で失敗しないよう、まだ無いときだけ公開する
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          if npm view "jh-presentation@${VERSION}" version >/dev/null 2>&1; then
+            echo "jh-presentation@${VERSION} is already on npm"
+          else
+            npm publish --access public   # provenance は Trusted Publishing で自動的に付く
+          fi
+      - name: Wait for the version on npm
+        # npm は公開直後しばらく審査中で、MCP Registry はその版がまだ無いと登録を断る
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          for i in $(seq 1 60); do
+            if npm view "jh-presentation@${VERSION}" version >/dev/null 2>&1; then exit 0; fi
+            sleep 20
+          done
+          echo "jh-presentation@${VERSION} did not appear on npm in 20 minutes" >&2
+          exit 1
       - name: Publish to MCP Registry
         run: |
           curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
