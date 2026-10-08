@@ -156,9 +156,14 @@ test('サンドボックス iframe (jh-editor と同じ条件) で編集が反�
   await page.keyboard.press('Control+y');
   await page.waitForFunction(() => window.msgs.some((m) => m.type === 'undo') && window.msgs.some((m) => m.type === 'redo'));
   // 発表中の Esc は、発表の終了をホストに頼む
+  // (present はメッセージで非同期に届き、応答もないので、届くまで Esc を繰り返す。届く前の Esc は一覧の切り替えになるだけ)
   await post({ jhdeck: 1, type: 'present', on: true });
-  await page.keyboard.press('Escape');
-  await page.waitForFunction(() => window.msgs.some((m) => m.type === 'present-exit'));
+  const exited = () => page.evaluate(() => window.msgs.some((m) => m.type === 'present-exit'));
+  for (let i = 0; i < 50 && !(await exited()); i++) {
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(100);
+  }
+  assert.ok(await exited(), '発表中の Esc で present-exit が届く');
   await page.close();
 });
 
