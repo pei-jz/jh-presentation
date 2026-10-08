@@ -81,6 +81,67 @@ test('ズームマップ: クリックで中にズームし、中のノードも
   assert.ok(await q(() => !!document.querySelector('#dg-zoom .dg-node[data-id="order"].is-open')));
 });
 
+test('階層マップ: 深い矢印は上の階層で集約され、中に入ると外のつながりが端に出る。パンくず・Backspace で戻る', async () => {
+  const view = () => q(() => {
+    const c = document.querySelector('#dg-drill .dg');
+    return {
+      level: c.getAttribute('data-level'),
+      nodes: [...c.querySelectorAll('.dg-nodes > .dg-node')].map((g) => g.getAttribute('data-id') + (g.classList.contains('is-boundary') ? '*' : '')).sort(),
+      edges: [...c.querySelectorAll('.dg-edges > .dg-edge')].map((g) => g.querySelector('.dg-edge-label')?.textContent || '').sort(),
+      crumbs: c.querySelector('.dg-crumbs').hidden ? '' : c.querySelector('.dg-crumbs').textContent,
+    };
+  });
+  const settle = () => page.evaluate(() => window.Deck.settled(4000));
+
+  await goto('dg-drill', 0);
+  assert.deepEqual(await view(), {
+    level: '', crumbs: '',
+    nodes: ['order', 'payext', 'stock', 'user', 'web'],
+    edges: ['', '引当', '決済', '注文'], // 注文 API の中の矢印が「注文システム → 在庫システム」などにまとまる
+  });
+
+  await page.click('#dg-drill .dg-node[data-id="order"]');
+  await settle();
+  const inside = await view();
+  assert.equal(inside.level, 'order');
+  assert.equal(inside.crumbs, 'EC サイト›注文システム');
+  assert.deepEqual(inside.nodes, ['order.api', 'order.db', 'order.mq', 'order.pay', 'payext*', 'stock*', 'web*'], '外のつながりは境界ノード (*) になる');
+
+  // 集約していない 1 本の矢印のクリックで、元の矢印の一覧
+  await page.evaluate(() => {
+    const g = [...document.querySelectorAll('#dg-drill .dg-edge')].find((e) => e.querySelector('.dg-edge-label')?.textContent === '引当');
+    g.querySelector('.dg-edge-hit').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  });
+  assert.equal(await q(() => document.querySelector('#dg-drill .dg-panel-title').textContent), '注文 API → 在庫システム');
+  assert.ok((await q(() => document.querySelector('#dg-drill .dg-panel-body').textContent)).includes('在庫の引当 → 在庫 API'));
+  await page.keyboard.press('Escape');
+  assert.equal(await q(() => document.querySelector('#dg-drill .dg-panel').hidden), true, 'Esc は先にパネルを閉じる');
+
+  await page.click('#dg-drill .dg-node[data-id="order.api"]');
+  await settle();
+  assert.equal((await view()).crumbs, 'EC サイト›注文システム›注文 API');
+
+  await page.click('#dg-drill .dg-crumb >> text=EC サイト');
+  await settle();
+  assert.equal((await view()).level, '', 'パンくずで全体へ戻る');
+
+  // steps の at で深い階層へ入り、Backspace で 1 つ上へ (スライドは戻らない)
+  await goto('dg-drill', 2);
+  await settle();
+  const deep = await view();
+  assert.equal(deep.level, 'order.api');
+  assert.deepEqual(deep.nodes, ['order.api.check', 'order.api.reserve', 'order.api.save', 'order.db*', 'order.mq*', 'order.pay*', 'stock*', 'web*']);
+  assert.equal(await q(() => document.querySelectorAll('#dg-drill .dg-edge.is-flowing').length), 1);
+  await page.keyboard.press('Backspace');
+  await settle();
+  assert.deepEqual(await q(() => [window.Deck.slides[window.Deck.index].id, document.querySelector('#dg-drill .dg').getAttribute('data-level')]), ['dg-drill', 'order']);
+
+  // 境界ノードのクリックで、そのノードが見える階層へ移る
+  await page.click('#dg-drill .dg-node[data-id="stock"]');
+  await settle();
+  assert.equal((await view()).level, '');
+});
+
 test('ER 図: ステップでテーブルが増え、クリックで関連テーブルと結合キーが光る', async () => {
   await goto('dg-er', 0);
   const hidden0 = await q(() => [...document.querySelectorAll('#dg-er .er-table.is-hidden')].map((g) => g.getAttribute('data-id')).sort());

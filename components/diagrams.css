@@ -154,6 +154,53 @@
 }
 .dg-caption[hidden] { display: none; }
 
+/* ---- 階層マップ (多段の入れ子) -------------------------------------------- */
+.dg-crumbs {
+  position: absolute;
+  top: 12px;
+  left: 16px;
+  z-index: 4;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  max-width: 70%;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 26px;
+  background: var(--surface);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .08);
+}
+.dg-crumbs[hidden] { display: none; }
+.dg-crumb {
+  padding: 4px 14px;
+  border: 0;
+  border-radius: 999px;
+  font: inherit;
+  color: var(--accent);
+  background: none;
+  cursor: pointer;
+}
+.dg-crumb:hover { background: var(--accent-soft); }
+.dg-crumb[aria-current] { font-weight: 700; color: var(--fg); cursor: default; }
+.dg-crumb-sep { color: var(--muted); }
+.dg-stackback { fill: var(--surface-2); stroke: var(--border); stroke-width: 3; }
+/* 図がパンくず (上)・説明バー (下) の裏に隠れないよう、表示枠を縮める */
+.dg.is-drill.is-inside .dg-svg { margin-top: 64px; height: calc(100% - 64px); }
+.dg.is-drill.has-caption .dg-svg { height: calc(100% - 80px); }
+.dg.is-drill.is-inside.has-caption .dg-svg { height: calc(100% - 144px); }
+.dg.is-drill .dg-node.has-children { cursor: pointer; }
+.dg.is-drill .dg-node.has-children.is-accent > .dg-shape { fill: var(--accent); }
+.dg.is-drill .dg-node.is-accent > .dg-hint { fill: var(--on-accent); opacity: .85; }
+.dg-node.is-boundary { cursor: pointer; }
+.dg-node.is-boundary > .dg-shape { fill: var(--bg); stroke: var(--muted); stroke-width: 3; stroke-dasharray: 10 8; }
+.dg-node.is-boundary > .dg-label { fill: var(--muted); }
+.dg-node.is-boundary:hover > .dg-shape { stroke: var(--accent); }
+.dg-edge-hit { fill: none; stroke: transparent; stroke-width: 36; pointer-events: stroke; cursor: pointer; }
+.dg-edge-count circle { fill: var(--bg); stroke: var(--accent); stroke-width: 3; }
+.dg-edge-count text { font-size: 22px; font-weight: 700; fill: var(--accent); text-anchor: middle; dominant-baseline: central; }
+.dg-enter { animation: dg-fade .45s ease both; }
+
 /* ---- ER 図 ------------------------------------------------------------ */
 .er-table { transition: opacity .35s; }
 .er-table.is-hidden, .er-rel.is-hidden { visibility: hidden; opacity: 0; }

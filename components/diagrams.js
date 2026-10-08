@@ -250,6 +250,7 @@
   function renderDiagram(container) {
     var data = readData(container);
     if (!data || !Array.isArray(data.nodes)) return;
+    if (needsDrill(data)) return renderDrill(container, data);
     var uid = 'dg' + (++uidSeq);
     var dir = data.direction === 'TB' ? 'TB' : 'LR';
     var zoomMode = !!data.zoom;
@@ -280,7 +281,7 @@
       g._rect = [b[0] - pad, b[1] - pad - 36, b[2] + pad * 2, b[3] + pad * 2 + 36];
     });
 
-    drawEdges(layerEdges, edges, byId, uid, 'top');
+    drawEdges(layerEdges, edges, byId, uid);
     nodes.forEach(function (n) { drawNode(layerNodes, n, uid, dir); });
 
     var all = nodes.slice();
@@ -375,46 +376,72 @@
     if (IS_PRINT) { setFocus(null, null); cam.reset(false); } else applyStep(false);
   }
 
-  function drawEdges(layer, edges, byId, uid) {
+  /** 線 p1→p2 (bend: 曲げる量。0 で直線) が、端以外のノードに何回かかるか */
+  function routeHits(p1, p2, bend, obstacles) {
+    var mx = (p1[0] + p2[0]) / 2 - (p2[1] - p1[1]) * bend, my = (p1[1] + p2[1]) / 2 + (p2[0] - p1[0]) * bend, hits = 0;
+    for (var t = 0.1; t < 0.95; t += 0.1) {
+      var u = 1 - t, x = u * u * p1[0] + 2 * u * t * mx + t * t * p2[0], y = u * u * p1[1] + 2 * u * t * my + t * t * p2[1];
+      obstacles.forEach(function (n) { if (x > n.x - 16 && x < n.x + n.w + 16 && y > n.y - 16 && y < n.y + n.h + 16) hits++; });
+    }
+    return hits;
+  }
+
+  function drawEdges(layer, edges, byId, uid, obstacles) {
     edges.forEach(function (e, i) {
       var a = byId[e.from], b = byId[e.to];
       if (!a || !b) { console.warn('[diagram] 矢印の端のノードがありません: ' + e.from + ' -> ' + e.to); return; }
       var p1 = borderPoint(a, b.x + b.w / 2, b.y + b.h / 2), p2 = borderPoint(b, a.x + a.w / 2, a.y + a.h / 2);
-      var g = s('g', { class: 'dg-edge' + (e.style === 'dashed' ? ' is-dashed' : ''), 'data-idx': e.idx != null ? e.idx : i }, layer);
-      var id = uid + '-e' + i + '-' + Math.random().toString(36).slice(2, 7);
-      var d;
-      if (e.curve) {
-        var mx = (p1[0] + p2[0]) / 2, my = (p1[1] + p2[1]) / 2, nx = -(p2[1] - p1[1]) * 0.25, ny = (p2[0] - p1[0]) * 0.25;
-        d = 'M' + p1[0] + ' ' + p1[1] + ' Q' + (mx + nx) + ' ' + (my + ny) + ' ' + p2[0] + ' ' + p2[1];
-      } else {
-        d = 'M' + p1[0] + ' ' + p1[1] + ' L' + p2[0] + ' ' + p2[1];
+      if (obstacles) { // 他のノードを突き抜けないよう、直線か曲げ方の候補から一番かからないものを選ぶ
+        var others = obstacles.filter(function (n) { return n !== a && n !== b; });
+        var cands = e.curve ? [0.25, 0.4] : [0, 0.25, -0.25, 0.4, -0.4];
+        var best = cands.reduce(function (bst, c) { var hh = routeHits(p1, p2, c, others); return hh < bst[1] ? [c, hh] : bst; }, [cands[0], Infinity]);
+        e = Object.assign({}, e, { curve: best[0] !== 0, bend: best[0] });
       }
-      s('path', { id: id, d: d, class: 'dg-edge-line', 'marker-end': 'url(#' + uid + '-arrow-n)', 'marker-start': e.both ? 'url(#' + uid + '-arrow-n)' : null }, g);
-      s('path', { d: d, class: 'dg-edge-line dg-edge-hi', 'marker-end': 'url(#' + uid + '-arrow-a)', 'marker-start': e.both ? 'url(#' + uid + '-arrow-a)' : null }, g);
-      // データの流れ (線の上を点が移動)
-      for (var k = 0; k < 3; k++) {
-        var dot = s('circle', { r: 9, class: 'dg-dot' }, g);
-        var am = s('animateMotion', { dur: (e.speed || 1.8) + 's', repeatCount: 'indefinite', begin: (k * (e.speed || 1.8) / 3).toFixed(2) + 's' }, dot);
-        s('mpath', { href: '#' + id }, am);
-      }
-      if (e.label) {
-        var mxl = (p1[0] + p2[0]) / 2, myl = (p1[1] + p2[1]) / 2;
-        var t = s('text', { x: mxl, y: myl - 14, class: 'dg-edge-label' }, g);
-        t.textContent = e.label;
+      var g = drawEdge(layer, e, i, p1, p2, uid);
+      if (e.hit) s('path', { d: g._d, class: 'dg-edge-hit' }, g);
+      if (e.count > 1) { // 集約した矢印: 元の矢印の本数
+        var c = s('g', { class: 'dg-edge-count' }, g);
+        s('circle', { cx: g._mid[0], cy: g._mid[1], r: 20 }, c);
+        var ct = s('text', { x: g._mid[0], y: g._mid[1] }, c);
+        ct.textContent = e.count;
       }
     });
+  }
+
+  function drawEdge(layer, e, i, p1, p2, uid) {
+    var g = s('g', { class: 'dg-edge' + (e.style === 'dashed' ? ' is-dashed' : ''), 'data-idx': e.idx != null ? e.idx : i }, layer);
+    var id = uid + '-e' + i + '-' + Math.random().toString(36).slice(2, 7);
+    var d, mx = (p1[0] + p2[0]) / 2, my = (p1[1] + p2[1]) / 2;
+    g._mid = [mx, my];
+    if (e.curve) {
+      var bend = e.bend != null ? e.bend : 0.25;
+      var nx = -(p2[1] - p1[1]) * bend, ny = (p2[0] - p1[0]) * bend;
+      d = 'M' + p1[0] + ' ' + p1[1] + ' Q' + (mx + nx) + ' ' + (my + ny) + ' ' + p2[0] + ' ' + p2[1];
+      g._mid = [mx + nx / 2, my + ny / 2]; // 2 次ベジェ曲線の中点
+    } else {
+      d = 'M' + p1[0] + ' ' + p1[1] + ' L' + p2[0] + ' ' + p2[1];
+    }
+    g._d = d;
+    s('path', { id: id, d: d, class: 'dg-edge-line', 'marker-end': 'url(#' + uid + '-arrow-n)', 'marker-start': e.both ? 'url(#' + uid + '-arrow-n)' : null }, g);
+    s('path', { d: d, class: 'dg-edge-line dg-edge-hi', 'marker-end': 'url(#' + uid + '-arrow-a)', 'marker-start': e.both ? 'url(#' + uid + '-arrow-a)' : null }, g);
+    // データの流れ (線の上を点が移動)
+    for (var k = 0; k < 3; k++) {
+      var dot = s('circle', { r: 9, class: 'dg-dot' }, g);
+      var am = s('animateMotion', { dur: (e.speed || 1.8) + 's', repeatCount: 'indefinite', begin: (k * (e.speed || 1.8) / 3).toFixed(2) + 's' }, dot);
+      s('mpath', { href: '#' + id }, am);
+    }
+    if (e.label) {
+      var lp = e.hit ? g._mid : [mx, my];
+      var t = s('text', { x: lp[0], y: lp[1] - (e.count > 1 ? 30 : 14), class: 'dg-edge-label' }, g);
+      t.textContent = e.label;
+    }
+    return g;
   }
 
   function drawNode(layer, n, uid, dir) {
     var g = s('g', { class: 'dg-node' + (n.kind ? ' is-' + n.kind : '') + (n.accent ? ' is-accent' : '') + (n.children ? ' has-children' : '') + (n.detail ? ' has-detail' : ''), 'data-id': n.id }, layer);
     g._node = n;
-    if (n.kind === 'db') {
-      var ry = 22;
-      s('path', { class: 'dg-shape', d: 'M' + n.x + ' ' + (n.y + ry) + ' a' + n.w / 2 + ' ' + ry + ' 0 0 1 ' + n.w + ' 0 v' + (n.h - ry * 2) + ' a' + n.w / 2 + ' ' + ry + ' 0 0 1 -' + n.w + ' 0 z' }, g);
-      s('path', { class: 'dg-shape-line', d: 'M' + n.x + ' ' + (n.y + ry) + ' a' + n.w / 2 + ' ' + ry + ' 0 0 0 ' + n.w + ' 0' }, g);
-    } else {
-      s('rect', { class: 'dg-shape', x: n.x, y: n.y, width: n.w, height: n.h, rx: n.kind === 'user' ? n.h / 2 : 16 }, g);
-    }
+    drawShape(g, n);
     var cx = n.x + n.w / 2;
     if (n.children) {
       var lt = s('text', { x: cx, y: n.y + 46, class: 'dg-label' }, g);
@@ -431,6 +458,392 @@
       }
     }
     if (n.detail && !n.children) s('circle', { cx: n.x + n.w - 18, cy: n.y + 18, r: 7, class: 'dg-detail-mark' }, g);
+  }
+
+  function drawShape(g, n) {
+    if (n.kind === 'db') {
+      var ry = 22;
+      s('path', { class: 'dg-shape', d: 'M' + n.x + ' ' + (n.y + ry) + ' a' + n.w / 2 + ' ' + ry + ' 0 0 1 ' + n.w + ' 0 v' + (n.h - ry * 2) + ' a' + n.w / 2 + ' ' + ry + ' 0 0 1 -' + n.w + ' 0 z' }, g);
+      s('path', { class: 'dg-shape-line', d: 'M' + n.x + ' ' + (n.y + ry) + ' a' + n.w / 2 + ' ' + ry + ' 0 0 0 ' + n.w + ' 0' }, g);
+    } else {
+      s('rect', { class: 'dg-shape', x: n.x, y: n.y, width: n.w, height: n.h, rx: n.kind === 'user' ? n.h / 2 : 16 }, g);
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // 多段の入れ子 (.diagram の階層マップ)
+  //   入れ子が 2 段以上・別の階層のノードを結ぶ矢印・"drill": true のときに使う。
+  //   中身を持つノードをクリックすると、その階層の図を描き直す (深さに制限がなく、文字の大きさが変わらない)。
+  //   矢印はどの階層のノード同士でも結べ、表示中の階層では「見えている祖先」同士の矢印に集約する。
+  //   外とつながる部品は、外側のノードを画面の端 (境界ノード) に出して矢印を引く。
+  // ------------------------------------------------------------------
+  function needsDrill(data) {
+    if (data.drill) return true;
+    var top = {}, nested = {};
+    data.nodes.forEach(function (n) { top[n.id] = true; });
+    var deep = false;
+    data.nodes.forEach(function (n) {
+      ((n.children && n.children.nodes) || []).forEach(function (c) {
+        nested[c.id] = true;
+        if (c.children && c.children.nodes && c.children.nodes.length) deep = true;
+      });
+    });
+    return deep || (data.edges || []).some(function (e) { return (!top[e.from] && nested[e.from]) || (!top[e.to] && nested[e.to]); });
+  }
+
+  function renderDrill(container, data) {
+    var uid = 'dg' + (++uidSeq);
+    container.classList.add('dg', 'is-drill');
+    var rootDir = data.direction === 'TB' ? 'TB' : 'LR';
+
+    // ---- ノードの木と、すべての矢印 ----
+    var info = { '': { id: '', label: data.title || '全体', parent: null, kids: [], raw: { detail: '' }, box: data } };
+    var allEdges = [];
+    (function walk(pid, box) {
+      (box.nodes || []).forEach(function (n) {
+        var id = String(n.id);
+        if (info[id]) console.warn('[diagram] ノードの id が重複しています: ' + id);
+        info[id] = { id: id, label: n.label == null ? id : n.label, parent: pid, kids: [], raw: n, box: n.children };
+        info[pid].kids.push(id);
+        if (n.children && n.children.nodes && n.children.nodes.length) walk(id, n.children);
+      });
+    })('', data);
+    // 矢印は、すべてのノードを登録してから集める (上の階層から深いノードへの矢印があるため)
+    (function collect(box) {
+      (box.edges || []).forEach(function (e) {
+        var from = String(e.from), to = String(e.to);
+        if (!info[from] || !info[to] || from === '' || to === '') { console.warn('[diagram] 矢印の端のノードがありません: ' + from + ' -> ' + to); return; }
+        allEdges.push(Object.assign({}, e, { from: from, to: to, key: from + '->' + to }));
+      });
+      (box.nodes || []).forEach(function (n) { if (n.children && n.children.nodes && n.children.nodes.length) collect(n.children); });
+    })(data);
+
+    function chain(id) { // id から根 ('') までの祖先 (自分を含む)
+      var c = [];
+      for (var x = id; x != null; x = info[x].parent) c.push(x);
+      return c;
+    }
+    function repIn(id, p) { // id を含む、p の直下のノード
+      for (var x = id; x; x = info[x].parent) if (info[x].parent === p) return x;
+      return null;
+    }
+    function outsideRep(id, p) { // p の外にある id を、p から見える祖先で代表させる
+      var up = chain(p), c = chain(id), lca = null;
+      for (var i = 0; i < c.length; i++) if (up.indexOf(c[i]) >= 0) { lca = c[i]; break; }
+      if (lca === id) return null; // p 自身・p の祖先につながる矢印は中では描かない
+      return repIn(id, lca);
+    }
+    function isAncestor(a, b) { return a !== b && chain(b).indexOf(a) >= 0; }
+    function uniq(arr) { return arr.filter(function (v, i) { return v && arr.indexOf(v) === i; }); }
+
+    function drillNode(id, boundary) {
+      var it = info[id], raw = it.raw, hasKids = it.kids.length > 0 && !boundary;
+      var n = normNode(Object.assign({}, raw, { children: null }), false);
+      n.hasKids = hasKids;
+      n.boundary = !!boundary;
+      if (boundary && it.parent) n.sub = info[it.parent].label; // どの中の部品かを示す
+      if (hasKids && !n.sub) { n.hint = 'クリックで中へ'; n.h = 130; }
+      if (boundary) n.detail = raw.detail || '';
+      return n;
+    }
+
+    // ---- 階層ごとの図 (配置は初回だけ計算して使い回す) ----
+    var cache = {};
+    function level(p) {
+      if (cache[p]) return cache[p];
+      var box = info[p].box || {};
+      var dir = box.direction === 'TB' ? 'TB' : box.direction === 'LR' ? 'LR' : rootDir;
+      var nodes = info[p].kids.map(function (id) { return drillNode(id, false); });
+      var byId = {}, bnodes = [], agg = {}, order = [];
+      nodes.forEach(function (n) { byId[n.id] = n; });
+      allEdges.forEach(function (e) {
+        var a = repIn(e.from, p), b = repIn(e.to, p), side = null, ext = null;
+        if (!a && !b) return;          // この階層の外の話
+        if (a && a === b) return;      // 1 つのノードの中の話
+        if (!a) { a = outsideRep(e.from, p); side = 'in'; ext = a; }
+        if (!b) { b = outsideRep(e.to, p); side = 'out'; ext = b; }
+        if (!a || !b) return;
+        if (ext && !byId[ext]) { var bn = drillNode(ext, true); bn.side = side; byId[ext] = bn; bnodes.push(bn); }
+        var k = a + '->' + b;
+        if (!agg[k]) { agg[k] = { from: a, to: b, key: k, items: [] }; order.push(k); }
+        agg[k].items.push(e);
+      });
+      var edges = order.map(function (k, i) {
+        var g = agg[k], it = g.items;
+        var datas = uniq([].concat.apply([], it.map(function (e) { return e.data || []; })));
+        var labels = uniq(it.map(function (e) { return e.label; }));
+        var label = it.length === 1 ? (it[0].label || datas.join('・')) : (datas.length ? datas.join('・') : labels.length === 1 ? labels[0] : '');
+        return {
+          from: g.from, to: g.to, key: k, idx: i, items: it, label: label, count: it.length, hit: true,
+          flow: it.some(function (e) { return e.flow; }),
+          style: it.every(function (e) { return e.style === 'dashed' || e.type === 'async'; }) ? 'dashed' : '',
+          both: it.length === 1 && !!it[0].both, curve: !!agg[g.to + '->' + g.from] || (it.length === 1 && !!it[0].curve),
+        };
+      });
+      var inner = edges.filter(function (e) { return !byId[e.from].boundary && !byId[e.to].boundary; });
+      if (nodes.some(function (n) { return !n._fixed; })) autoLayout(nodes, inner, dir, data.gap || 160, data.gapCross || 70);
+      // 境界ノード: 入ってくるものを始まりの側 (左 / 上)、出ていくものを終わりの側 (右 / 下) に並べる
+      var b = nodes.length ? bounds(nodes) : [0, 0, 0, 0], gap = 240, gapCross = data.gapCross || 70;
+      ['in', 'out'].forEach(function (side) {
+        var list = bnodes.filter(function (n) { return n.side === side; });
+        if (!list.length) return;
+        // つながる中のノードの位置の順に並べる (矢印が交差しにくいように)
+        list.forEach(function (n) {
+          var ps = edges.filter(function (e) { return e.from === n.id || e.to === n.id; }).map(function (e) {
+            var m = byId[e.from === n.id ? e.to : e.from];
+            return dir === 'TB' ? m.x + m.w / 2 : m.y + m.h / 2;
+          });
+          n._order = ps.reduce(function (a, v) { return a + v; }, 0) / ps.length;
+        });
+        list.sort(function (a, c) { return a._order - c._order; });
+        var total = list.reduce(function (t, n) { return t + (dir === 'TB' ? n.w : n.h) + gapCross; }, -gapCross);
+        var pos = (dir === 'TB' ? b[0] + b[2] / 2 : b[1] + b[3] / 2) - total / 2;
+        list.forEach(function (n) {
+          if (dir === 'TB') { n.x = pos; n.y = side === 'in' ? b[1] - gap - n.h : b[1] + b[3] + gap; pos += n.w + gapCross; }
+          else { n.y = pos; n.x = side === 'in' ? b[0] - gap - n.w : b[0] + b[2] + gap; pos += n.h + gapCross; }
+        });
+      });
+      // グループ (この階層のノードだけを囲む)
+      var groups = (box.groups || []).map(function (g) {
+        var members = (g.nodes || []).map(function (id) { return byId[id]; }).filter(function (n) { return n && !n.boundary; });
+        if (!members.length) return null;
+        var gb = bounds(members), pad = 40;
+        return { label: g.label || '', rect: [gb[0] - pad, gb[1] - pad - 36, gb[2] + pad * 2, gb[3] + pad * 2 + 36] };
+      }).filter(Boolean);
+      var all = nodes.concat(bnodes).map(function (n) { return { x: n.x, y: n.y, w: n.w + (n.hasKids ? 12 : 0), h: n.h + (n.hasKids ? 12 : 0) }; });
+      groups.forEach(function (g) { all.push({ x: g.rect[0], y: g.rect[1], w: g.rect[2], h: g.rect[3] }); });
+      var fb = bounds(all), pad = 50;
+      cache[p] = { id: p, dir: dir, nodes: nodes, bnodes: bnodes, byId: byId, edges: edges, groups: groups, full: [fb[0] - pad, fb[1] - pad, fb[2] + pad * 2, fb[3] + pad * 2] };
+      return cache[p];
+    }
+
+    // ---- 描画 ----
+    var svgEl = s('svg', { class: 'dg-svg', preserveAspectRatio: 'xMidYMid meet', role: 'img', 'aria-label': data.title || '図' });
+    container.insertBefore(svgEl, container.firstChild);
+    arrowDefs(svgEl, uid);
+    var layerGroups = s('g', { class: 'dg-groups' }, svgEl);
+    var layerEdges = s('g', { class: 'dg-edges' }, svgEl);
+    var layerNodes = s('g', { class: 'dg-nodes' }, svgEl);
+    var cam = new Camera(svgEl, [0, 0, 100, 100]);
+    var crumbs = h('nav', 'dg-crumbs', container);
+    crumbs.setAttribute('aria-label', '階層');
+    crumbs.addEventListener('click', function (ev) { ev.stopPropagation(); });
+    var panel = Panel(container, function () { clearSelection(); });
+    var caption = Caption(container);
+    var steps = Array.isArray(data.steps) ? data.steps : [];
+    var stepNow = steps.length > 1 ? addStepMarkers(container, steps.length - 1) : function () { return 0; };
+    var cur = null, selected = null, navTok = 0;
+
+    function setCaption(text) { // 説明バーとパンくずの分だけ、図の表示枠を空ける (CSS)
+      caption.set(text);
+      container.classList.toggle('has-caption', !!text);
+    }
+
+    function draw(p, enter) {
+      var lv = level(p);
+      cur = p;
+      [layerGroups, layerEdges, layerNodes].forEach(function (l) {
+        l.textContent = '';
+        l.classList.remove('dg-enter');
+        if (enter && !IS_PRINT) { void l.getBoundingClientRect(); l.classList.add('dg-enter'); } // 再生し直すためにレイアウトを確定させる
+      });
+      lv.groups.forEach(function (g) {
+        var gg = s('g', { class: 'dg-group' }, layerGroups);
+        s('rect', { x: g.rect[0], y: g.rect[1], width: g.rect[2], height: g.rect[3], rx: 18 }, gg);
+        var t = s('text', { x: g.rect[0] + 20, y: g.rect[1] + 30, class: 'dg-group-label' }, gg);
+        t.textContent = g.label;
+      });
+      drawEdges(layerEdges, lv.edges, lv.byId, uid, lv.nodes.concat(lv.bnodes));
+      lv.nodes.concat(lv.bnodes).forEach(function (n) { drawDrillNode(n); });
+      // 説明バーは、ステップが指す階層にいる間だけ出す
+      var st = steps[stepNow()] || {};
+      setCaption(p === levelOf(st.at != null ? st.at : st.zoom) ? st.note : '');
+      cam.full = lv.full.slice();
+      cam.apply(lv.full.slice());
+      container.classList.toggle('is-inside', !!p);
+      container.setAttribute('data-level', p);
+      updateCrumbs();
+    }
+
+    function drawDrillNode(n) {
+      var g = s('g', { class: 'dg-node' + (n.kind ? ' is-' + n.kind : '') + (n.accent && !n.boundary ? ' is-accent' : '') + (n.hasKids ? ' has-children' : '') + (n.detail ? ' has-detail' : '') + (n.boundary ? ' is-boundary is-' + n.side : ''), 'data-id': n.id }, layerNodes);
+      g._node = n;
+      if (n.hasKids) s('rect', { class: 'dg-stackback', x: n.x + 12, y: n.y + 12, width: n.w, height: n.h, rx: 16 }, g); // 重なった箱 = 中がある
+      drawShape(g, n);
+      var cx = n.x + n.w / 2, second = n.sub || n.hint;
+      var t = s('text', { x: cx, y: n.y + n.h / 2 + (second ? -12 : 0), class: 'dg-label' }, g);
+      setLines(t, n.label, 36);
+      if (second) {
+        var st = s('text', { x: cx, y: n.y + n.h / 2 + 30, class: n.sub ? 'dg-sub' : 'dg-hint' }, g);
+        st.textContent = second;
+      }
+      if (n.detail && !n.hasKids && !n.boundary) s('circle', { cx: n.x + n.w - 18, cy: n.y + 18, r: 7, class: 'dg-detail-mark' }, g);
+    }
+
+    function updateCrumbs() {
+      crumbs.textContent = '';
+      crumbs.hidden = !cur;
+      chain(cur).reverse().forEach(function (id, i, arr) {
+        if (i) h('span', 'dg-crumb-sep', crumbs, '›');
+        var b = h('button', 'dg-crumb', crumbs);
+        b.type = 'button';
+        b.textContent = String(info[id].label).replace(/\n/g, ' ');
+        if (i === arr.length - 1) {
+          b.setAttribute('aria-current', 'location');
+          b.addEventListener('click', function () { if (info[id].raw.detail) panel.show(b.textContent, info[id].raw.detail); });
+        } else {
+          b.addEventListener('click', function () { selected = null; panel.hide(); go(id, true).then(function () { setFocus(null, null); }); });
+        }
+      });
+    }
+
+    /** 階層 p へ移る。深くなるときは入るノードへズームしてから描き直し、浅くなるときは元のノードから引いて全体へ戻る */
+    function go(p, animate) {
+      if (p === cur) return Promise.resolve(true);
+      var tok = ++navTok, from = cur;
+      if (animate && from != null && isAncestor(from, p)) {
+        var n = level(from).byId[repIn(p, from)];
+        return cam.fit([n.x, n.y, n.w, n.h], true).then(function () {
+          if (tok !== navTok) return false;
+          draw(p, true);
+          return true;
+        });
+      }
+      draw(p, animate);
+      if (animate && from != null && isAncestor(p, from)) {
+        var r = level(p).byId[repIn(from, p)];
+        if (r) { cam.fit([r.x, r.y, r.w, r.h], false); return cam.reset(true).then(function () { return tok === navTok; }); }
+      }
+      return Promise.resolve(true);
+    }
+
+    /** 表示中の階層で見えているノード id に置き換える (深いノード・外のノードの id でも指定できる) */
+    function visibleId(id) {
+      var lv = level(cur);
+      id = String(id);
+      if (lv.byId[id]) return id;
+      if (!info[id]) return null;
+      var r = repIn(id, cur) || outsideRep(id, cur);
+      return r && lv.byId[r] ? r : null;
+    }
+
+    function setFocus(focusIds, flowKeys) {
+      var lv = level(cur);
+      var focus = focusIds && focusIds.length ? new Set(focusIds.map(visibleId).filter(Boolean)) : null;
+      var flow = flowKeys ? new Set(flowKeys) : null;
+      container.classList.toggle('has-focus', !!focus);
+      layerNodes.querySelectorAll(':scope > .dg-node').forEach(function (g) {
+        g.classList.toggle('is-focus', !!focus && focus.has(g.getAttribute('data-id')));
+      });
+      layerEdges.querySelectorAll(':scope > .dg-edge').forEach(function (g) {
+        var e = lv.edges[Number(g.getAttribute('data-idx'))];
+        var inFlow = !!flow && (flow.has(e.key) || e.items.some(function (i) { return flow.has(i.key); }));
+        var on = !!focus && focus.has(e.from) && focus.has(e.to);
+        g.classList.toggle('is-focus', on || inFlow);
+        g.classList.toggle('is-flowing', (flow ? inFlow : e.flow) && !IS_PRINT);
+      });
+    }
+
+    /** steps の at / zoom から階層を決める (中身のないノードなら、それが見える親の階層) */
+    function levelOf(id) {
+      if (id == null || id === '' || !info[String(id)]) return '';
+      id = String(id);
+      return info[id].kids.length ? id : info[id].parent;
+    }
+
+    function applyStep(animate) {
+      selected = null;
+      panel.hide();
+      var st = steps[stepNow()] || {};
+      setCaption(st.note);
+      return go(levelOf(st.at != null ? st.at : st.zoom), animate).then(function (ok) {
+        if (!ok) return;
+        setFocus(st.focus, st.flow);
+        var sel = st.select && visibleId(st.select);
+        if (sel) showDetail(level(cur).byId[sel]);
+      });
+    }
+
+    function showDetail(n) {
+      if (n.detail || (n.sub && !n.boundary)) panel.show(String(n.label).replace(/\n/g, ' '), n.detail || esc(n.sub));
+    }
+
+    function nodeLabel(id) { return esc(String(info[id].label).replace(/\n/g, ' ')); }
+
+    function selectNode(id) {
+      var lv = level(cur), n = lv.byId[id];
+      if (!n) return;
+      if (n.boundary) { // 外のノード: それが見える階層へ移って選ぶ
+        selected = null;
+        panel.hide();
+        go(info[id].parent, true).then(function (ok) { if (ok) { setFocus(null, null); selectNode(id); } });
+        return;
+      }
+      if (n.hasKids) {
+        selected = null;
+        panel.hide();
+        go(id, true).then(function (ok) { if (ok) setFocus(null, null); });
+        return;
+      }
+      if (selected === id) { clearSelection(); return; }
+      selected = id;
+      var near = lv.edges.filter(function (e) { return e.from === id || e.to === id; });
+      setFocus([id].concat(near.map(function (e) { return e.from === id ? e.to : e.from; })), near.map(function (e) { return e.key; }));
+      panel.hide();
+      showDetail(n);
+    }
+
+    function selectEdge(e) {
+      var key = 'edge:' + e.key;
+      if (selected === key) { clearSelection(); return; }
+      selected = key;
+      setFocus([e.from, e.to], [e.key]);
+      var list = e.items.map(function (i) {
+        var extra = [i.label, (i.data || []).join('・')].filter(Boolean).join(' / ');
+        return '<li><b>' + nodeLabel(i.from) + '</b> → <b>' + nodeLabel(i.to) + '</b>' + (extra ? '<br><span class="muted">' + esc(extra) + '</span>' : '') + '</li>';
+      }).join('');
+      panel.show(String(info[e.from].label).replace(/\n/g, ' ') + ' → ' + String(info[e.to].label).replace(/\n/g, ' '), '<ul>' + list + '</ul>');
+    }
+
+    function clearSelection() {
+      var open = !container.querySelector(':scope > .dg-panel').hidden;
+      if (!selected && !open) return false;
+      selected = null;
+      panel.hide();
+      var st = steps[stepNow()] || {};
+      if (cur === levelOf(st.at != null ? st.at : st.zoom)) setFocus(st.focus, st.flow); else setFocus(null, null);
+      return true;
+    }
+
+    function up() {
+      if (!cur) return false;
+      selected = null;
+      panel.hide();
+      go(info[cur].parent, true).then(function (ok) { if (ok) setFocus(null, null); });
+      return true;
+    }
+
+    layerNodes.addEventListener('click', function (ev) {
+      var g = ev.target.closest('.dg-node[data-id]');
+      if (!g) return;
+      ev.stopPropagation();
+      selectNode(g.getAttribute('data-id'));
+    });
+    layerEdges.addEventListener('click', function (ev) {
+      var g = ev.target.closest('.dg-edge[data-idx]');
+      if (!g) return;
+      ev.stopPropagation();
+      selectEdge(level(cur).edges[Number(g.getAttribute('data-idx'))]);
+    });
+    svgEl.addEventListener('click', function () { if (selected) clearSelection(); });
+
+    instances.push({
+      container: container,
+      reset: function () { return clearSelection() || up(); },
+      back: function () { return up(); },
+    });
+    onSlideState(container, function () { applyStep(true); }, function () { selected = null; });
+    if (IS_PRINT) { draw('', false); setFocus(null, null); } else applyStep(false);
   }
 
   /** 入れ子の詳細図: 親ノードの中に縮小して描き、ズームすると見えるようにする */
@@ -1117,12 +1530,17 @@
   document.querySelectorAll('.terminal').forEach(function (el) { safe(renderTerminal, el); });
 
   // Esc: 表示中のスライドで詳細を開いている図があれば、先に閉じる (エンジンの一覧表示より優先)
+  // Esc / Backspace: 階層マップの中に入っていれば 1 つ上の階層へ戻る (エンジンの「前へ」より優先)
   window.addEventListener('keydown', function (ev) {
-    if (ev.key !== 'Escape' || ev.target.isContentEditable) return;
+    if ((ev.key !== 'Escape' && ev.key !== 'Backspace') || ev.target.isContentEditable) return;
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName)) return;
     var active = document.querySelector('.slide.active');
     if (!active) return;
     var handled = false;
-    instances.forEach(function (it) { if (active.contains(it.container) && it.reset()) handled = true; });
+    instances.forEach(function (it) {
+      if (!active.contains(it.container)) return;
+      if (ev.key === 'Escape' ? it.reset() : it.back && it.back()) handled = true;
+    });
     if (handled) { ev.preventDefault(); ev.stopImmediatePropagation(); }
   }, true);
 })();

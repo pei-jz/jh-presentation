@@ -147,6 +147,42 @@ Claude Code (このリポジトリ) からも、MCP サーバー経由でも、�
 - 1 枚に置くノードは **12 個程度まで**。多いときは `children` で入れ子にするか、スライドを分ける
 - 入れ子の中身は全体表示では薄く小さく見え、ズームすると読める大きさになる
 
+#### 階層マップ (大きなシステムを何段でも入れ子にする)
+入れ子が **2 段以上**、または **別の階層のノード同士を矢印で結ぶ** と、自動で階層マップになる (`"drill": true` で 1 段でも使える)。
+中身のある箱 (重なった箱) をクリックすると、その階層の図に描き直して中へ入る。深くても文字は小さくならない。
+```html
+<div class="diagram"><script type="application/json">
+{
+  "title": "EC サイト",                                   // パンくずの先頭の名前
+  "nodes": [
+    { "id": "web", "label": "注文画面" },
+    { "id": "order", "label": "注文システム", "children": { "nodes": [
+      { "id": "order.api", "label": "注文 API", "children": { "nodes": [
+        { "id": "order.api.check", "label": "入力チェック" },
+        { "id": "order.api.save", "label": "注文の保存" }
+      ], "edges": [{ "from": "order.api.check", "to": "order.api.save" }] } },
+      { "id": "order.db", "label": "注文 DB", "kind": "db" }
+    ] } }
+  ],
+  "edges": [                                                    // どの階層のノード同士でも結べる
+    { "from": "web", "to": "order.api.check", "label": "注文", "data": ["注文"], "flow": true },
+    { "from": "order.api.save", "to": "order.db", "label": "保存", "type": "async" }   // type: async で破線
+  ],
+  "steps": [
+    { "note": "全体像" },
+    { "at": "order", "note": "注文システムの中" },                         // at: その階層へ入る ("" は全体)
+    { "at": "order.api", "flow": ["order.api.save->order.db"], "note": "保存の流れ" }
+  ]
+}
+</script></div>
+```
+- **矢印は一番細かい部品同士で 1 回だけ書く。** 上の階層では「見えている箱」同士の矢印に自動でまとまる (複数まとまると本数の丸が付き、ラベルは `data` を並べたものになる)。同じ関係を上の階層にもう一度書かない
+- 中に入ると、外とつながる箱が点線の **境界ノード** として端に出る (入ってくるものは左、出ていくものは右)。クリックでその箱が見える階層へ移る
+- 戻る: 左上のパンくず、Esc / Backspace (1 つ上へ)。矢印のクリックで、まとめた元の矢印の一覧を出す
+- id は図全体で一意にする (`親.子` の形が読みやすい)。`focus` `flow` `select` には深いノードの id も書ける (表示中の階層の箱に置き換わる)
+- 1 つの階層に置くノードは 8 個程度まで (境界ノードも並ぶため)。子の向きは `children.direction` で変えられるが、横長のスライドでは LR のほうが大きく見える
+- PDF・一覧では全体 (一番上の階層) を表示する
+
 ### ER 図 (`.er-diagram`)
 ```html
 <div class="er-diagram"><script type="application/json">
