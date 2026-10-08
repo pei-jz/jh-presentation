@@ -186,7 +186,8 @@ Everything runs on your machine: no telemetry, no outbound requests, the preview
 }
 ```
 
-あとは「Git のブランチ戦略を 15 分で説明するデッキを、図とステップ表示を多めに作って」のように頼むだけです。
+あとは「jh-presentation で、Git のブランチ戦略を 15 分で説明するプレゼン資料を、図とステップ表示を多めに作って」のように頼むだけです。
+依頼の書き方 (道具の名前を書くべきクライアント・依頼文に入れるとよいこと・直し方) は [docs/usage.md](docs/usage.md) にまとめています。
 詳しい設定 (Claude Code・VS Code) は [mcp/README.md](mcp/README.md) を参照してください。
 このリポジトリで AI に作業させる場合のルールは [CLAUDE.md](CLAUDE.md) (Claude Code) / [AGENTS.md](AGENTS.md) (Codex・Cursor など)、スライドの書き方は [docs/authoring-guide.md](docs/authoring-guide.md) にあります。
 

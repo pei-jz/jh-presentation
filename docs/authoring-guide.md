@@ -235,6 +235,105 @@ Claude Code (このリポジトリ) からも、MCP サーバー経由でも、�
 - コマンド 1 つ (と続く出力) が → キーの 1 ステップ。1 文字ずつ入力してから出力を表示する (`"steps": false` で最初から全部表示、`"initial": n` で最初の n 個を表示しておく)
 - 出力は実際の実行結果をそのまま使う (創作しない)。**全体で 14 行程度まで** (超えると古い行から見えなくなる)
 
+## 良い例 (迷ったらこの形で書く)
+
+どのテーマでも崩れないことを確認済みの書き方。内容を差し替えて使う。
+
+### 流れ・手順 (矢印にラベルがある) → 関連図の部品
+```html
+<section class="slide" id="git-areas">
+  <h2>変更は 3 つの場所を順に移動する</h2>
+  <div class="fill">
+    <div class="diagram"><script type="application/json">
+    {
+      "direction": "LR",
+      "nodes": [
+        { "id": "work", "label": "作業ディレクトリ", "sub": "編集する場所" },
+        { "id": "stage", "label": "ステージング", "sub": "コミットの候補" },
+        { "id": "repo", "label": "リポジトリ", "sub": "履歴の保存先", "accent": true }
+      ],
+      "edges": [
+        { "from": "work", "to": "stage", "label": "git add", "flow": true },
+        { "from": "stage", "to": "repo", "label": "git commit", "flow": true }
+      ],
+      "steps": [
+        { "note": "変更は左から右へ進む" },
+        { "focus": ["work", "stage"], "flow": ["work->stage"], "note": "① git add で選ぶ" },
+        { "focus": ["stage", "repo"], "flow": ["stage->repo"], "note": "② git commit で記録する" }
+      ]
+    }
+    </script></div>
+  </div>
+  <aside class="notes">add は「選ぶ」、commit は「記録する」。</aside>
+</section>
+```
+
+### 比較 → カード 2 枚 + 結論の一言
+```html
+<section class="slide" id="merge-vs-rebase">
+  <h2>自分のブランチは rebase、共有ブランチは merge</h2>
+  <div class="fill v-center">
+    <div class="cols-2 stretch">
+      <div class="card step fade-up">
+        <h3>merge</h3>
+        <p>枝分かれの履歴がそのまま残る</p>
+        <p class="muted">共有ブランチでも安全に使える</p>
+      </div>
+      <div class="card is-accent step fade-up">
+        <h3>rebase</h3>
+        <p>履歴が 1 本の線になって読みやすい</p>
+        <p class="muted">push 済みのブランチには使わない</p>
+      </div>
+    </div>
+    <div class="callout mt-3 step fade-up"><p>迷ったら「まだ誰とも共有していないか」で決める</p></div>
+  </div>
+</section>
+```
+
+### 数値 → `stat` を横に並べる
+```html
+<section class="slide" id="result">
+  <h2>自動化でレビュー待ちが半分になった</h2>
+  <div class="fill cols-3 middle">
+    <div class="stat anim-fade-up"><div class="stat-value"><span data-count-to="52">52</span><span class="unit">%</span></div><div class="stat-label">レビュー待ち時間の削減</div></div>
+    <div class="stat anim-fade-up" style="--delay:.15s"><div class="stat-value"><span data-count-to="3">3</span><span class="unit">倍</span></div><div class="stat-label">1 日のマージ数</div></div>
+    <div class="stat anim-fade-up" style="--delay:.3s"><div class="stat-value"><span data-count-to="0">0</span><span class="unit">件</span></div><div class="stat-label">リリース後の障害</div></div>
+  </div>
+</section>
+```
+
+### コードと説明 → `data-emph-labels` で説明と同時に強調
+```html
+<section class="slide" id="code">
+  <h2>設定 2 行で履歴が散らからない</h2>
+  <div class="fill cols-2 middle">
+    <div>
+      <div class="code-title">.gitconfig</div>
+      <pre class="code numbered"><code class="hl" data-lang="bash" data-emph="2|4" data-emph-labels="a|b">
+        [pull]
+          rebase = true
+        [fetch]
+          prune = true
+      </code></pre>
+    </div>
+    <div class="v-center">
+      <div class="callout step" data-step="a"><b>pull で rebase</b><br><span>余計なマージコミットを作らない</span></div>
+      <div class="callout step mt-2" data-step="b"><b>消えた枝を掃除</b><br><span>リモートで消えた枝を手元でも消す</span></div>
+    </div>
+  </div>
+</section>
+```
+
+### 崩れやすい書き方 (使わない)
+
+| 避ける | 代わりに |
+|---|---|
+| `div` と CSS で箱と矢印を自作する (`position: absolute`、矢印の文字や疑似要素) | 矢印にラベルがあれば `.diagram`、なければ `.flow` |
+| カード・箱に固定の `height` を付ける (中身が少ないと下が空き、多いとはみ出す) | 高さは書かない。揃えるなら `cols-2 stretch` |
+| `style` 属性で色・文字サイズ・余白を細かく指定する | テーマ変数とクラス (`muted` `big` `mt-2` など)。必要ならデッキ専用 CSS |
+| 1 枚に文章を詰め込む・カードに長文を入れる | 1 枚 1 メッセージ。カードの中は 1〜2 行の短文を 2〜3 個 |
+| ブロック要素の横にむき出しの文字を置く (`<div><b>見出し</b>説明</div>` で説明が見出しに続いてしまう) | `<b>見出し</b><br><span>説明</span>` や `<h3>` + `<p>` |
+
 ## ステップ (→ キーで段階表示)
 
 - 要素に `class="step"` を付けると、→ キーで 1 つずつ表示される (DOM の順)

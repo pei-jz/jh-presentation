@@ -146,6 +146,23 @@ export async function auditDeck(deckFile) {
   });
 }
 
+const AUDIT_KEYS = ['overflow', 'overlap', 'contrast', 'images', 'smallText', 'errors', 'warnings', 'externalRequests'];
+
+/**
+ * auditDeck の結果を、書き込みの戻り値に添える短い形にする (問題がなければ 1 行、あれば種類ごとに最大 10 件)
+ */
+export function summarizeAudit(r) {
+  if (r.ok) {
+    return { ok: true, message: '検査した項目では問題なし。見た目 (空きすぎ・詰めすぎ・不自然な折り返し) は screenshot_deck で確認する' };
+  }
+  const issues = {};
+  for (const k of AUDIT_KEYS) {
+    const list = r[k] || [];
+    if (list.length) issues[k] = list.length > 10 ? [...list.slice(0, 10), `ほか ${list.length - 10} 件`] : list;
+  }
+  return { ok: false, issues, message: '問題を直してから書き込み直す (書き込むたびに自動で検査される)' };
+}
+
 /**
  * スライドを JPEG で撮影する
  * @param {number[]} slides 1 始まりのスライド番号

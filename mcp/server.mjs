@@ -33,7 +33,7 @@ import { buildGallery } from '../tools/lib/gallery.mjs';
 import { loadBrand, buildDeck, BRAND_POSITIONS, TRANSITIONS } from '../tools/lib/deckfile.mjs';
 import { createSaveToken, injectSaveConfig, handleSave } from '../tools/lib/save-endpoint.mjs';
 import { launchFullscreen } from '../tools/lib/browser.mjs';
-import { auditDeck, screenshotDeck, exportPdf, extractFromSavedPage, closeBrowser } from './render.mjs';
+import { auditDeck, summarizeAudit, screenshotDeck, exportPdf, extractFromSavedPage, closeBrowser } from './render.mjs';
 
 const pkg = JSON.parse(fs.readFileSync(path.join(PKG_ROOT, 'package.json'), 'utf8'));
 const WS = resolveWorkspace();
@@ -65,11 +65,13 @@ const MCP_WORKFLOW = `
 4. write_deck でスライドを書く。slides には <section class="slide"> の並びだけを渡す (外枠・エンジンはサーバーが埋め込む)。
    デッキ専用のスタイル・動きは css / js に渡す。1 枚だけ直すときは replace_slide を使う。
    画像は add_asset で埋め込み、<img data-asset="名前"> で参照する。
-5. audit_deck を実行し、overflow (はみ出し)・smallText (小さすぎる文字)・errors (JS エラー) を直す。
-6. screenshot_deck で実際の見た目を確認する (数枚ずつ)。重なり・空きすぎ・詰めすぎ・不自然な折り返しを直す。
+5. write_deck / replace_slide の戻り値の audit (自動検査の結果) を見る。ok: false なら issues の
+   overflow (はみ出し)・overlap (重なり)・smallText (小さすぎる文字)・errors (JS エラー) などを直して書き込み直す。
+   audit_deck は、書き込まずに検査し直したいときに使う。
+6. screenshot_deck で実際の見た目を確認する (数枚ずつ。画像を見られるモデルの場合)。重なり・空きすぎ・詰めすぎ・不自然な折り返しを直す。
    ステップやアニメーションの途中を確認したい場合は step に数値を指定する。
 7. 完成したら open_deck でユーザーのブラウザに表示する (発表するときは fullscreen: true)。デッキは 1 ファイルなので、そのまま配布できる。
-   PDF が必要なら export_deck。
+   PDF (export_deck) は、ユーザーが PDF を求めたときだけ作る。
 
 - 既存デッキの修正は read_deck で現在の内容を読んでから行い、返された revision を write_deck / replace_slide に渡す。
 - 書き込みで埋め込みのエンジンは変わらない。最新化 (upgrade_deck) はユーザーが求めたときだけ。
@@ -82,9 +84,11 @@ const server = new McpServer(
   { name: 'jh-presentation', version: pkg.version },
   {
     instructions:
-      'HTML プレゼンテーション (スライド) を作成・確認・出力する道具。デッキは 1 ファイルの HTML として保存される。' +
-      'スライドを作る前に必ず get_guide を呼び、ガイドの部品とルールに従って書くこと。' +
-      '書いた後は audit_deck と screenshot_deck で確認して直してから、ユーザーに完了を伝える。',
+      'プレゼンテーション資料 (スライド・発表資料・LT・報告資料) を HTML で作成・確認・出力する道具。' +
+      'プレゼン資料やスライドの作成を頼まれたら、自分で HTML を書かずにこのサーバーの道具を使う。デッキは 1 ファイルの HTML として保存される。' +
+      'スライドを作る前に必ず get_guide を呼び、ガイドの部品とルールに従って書くこと (図・比較・数値は部品を使い、箱や矢印を自作しない)。' +
+      'write_deck / replace_slide の戻り値に自動検査の結果 (audit) が入るので、問題があれば直してから、ユーザーに完了を伝える。' +
+      'PDF はユーザーが求めたときだけ作る。',
   },
 );
 
@@ -168,26 +172,34 @@ function themeSummary() {
 // ---------------------------------------------------------------------------
 // ガイド
 // ---------------------------------------------------------------------------
+// このセッションでガイドを渡したか。読まずに create_deck を呼んだ場合は、create_deck の戻り値にガイドを添える
+// (道具を一部しか渡さないクライアントや、手順を飛ばしがちなモデルでも、ガイドに沿って書けるように)
+let guideSent = false;
+
+function guideText() {
+  guideSent = true;
+  const b = loadBrand(brandDir(WS));
+  return readGuide() + '\n' + MCP_WORKFLOW +
+    `\n## 利用できるテーマ\n\n${themeSummary()}\n` +
+    `\n## ブランド設定\n\n名前: ${b.name || '(なし)'} / ラベル: ${b.label || '(なし)'} / ロゴ: ${b.logo ? 'あり' : 'なし'} / 新規デッキの既定: ${b.position}\n` +
+    `設定ファイル: ${path.join(brandDir(WS), 'brand.json')}\n` +
+    `\nワークスペース: ${WS}\n`;
+}
+
 tool('get_guide', {
   title: 'デッキ作成ガイドを読む',
-  description: 'スライドの書き方・部品カタログ・デザイン原則・作業手順。スライドを書く前に必ず読むこと。',
+  description: 'プレゼンテーション資料 (スライド・発表資料) の書き方・部品カタログ・良い例・デザイン原則・作業手順。スライドを書く前に必ず読むこと。',
   annotations: { readOnlyHint: true },
-}, async () => {
-  const b = loadBrand(brandDir(WS));
-  return {
-    content: [text(readGuide() + '\n' + MCP_WORKFLOW +
-      `\n## 利用できるテーマ\n\n${themeSummary()}\n` +
-      `\n## ブランド設定\n\n名前: ${b.name || '(なし)'} / ラベル: ${b.label || '(なし)'} / ロゴ: ${b.logo ? 'あり' : 'なし'} / 新規デッキの既定: ${b.position}\n` +
-      `設定ファイル: ${path.join(brandDir(WS), 'brand.json')}\n` +
-      `\nワークスペース: ${WS}\n`)],
-  };
-});
+}, async () => ({ content: [text(guideText())] }));
 
 server.registerResource('guide', 'jh-presentation://guide', {
   title: 'デッキ作成ガイド',
   description: 'スライドの書き方・部品カタログ・デザイン原則',
   mimeType: 'text/markdown',
-}, async (uri) => ({ contents: [{ uri: uri.href, mimeType: 'text/markdown', text: readGuide() + '\n' + MCP_WORKFLOW }] }));
+}, async (uri) => {
+  guideSent = true;
+  return { contents: [{ uri: uri.href, mimeType: 'text/markdown', text: readGuide() + '\n' + MCP_WORKFLOW }] };
+});
 
 // ---------------------------------------------------------------------------
 // テーマ
@@ -300,7 +312,7 @@ tool('list_templates', {
 // ---------------------------------------------------------------------------
 tool('list_decks', {
   title: 'デッキ一覧',
-  description: 'デッキの一覧 (新しい順)。保存先のフォルダも返す。',
+  description: '作成済みのプレゼンテーション資料 (スライド・デッキ) の一覧 (新しい順)。保存先のフォルダも返す。',
   inputSchema: { dir: dirSchema },
   annotations: { readOnlyHint: true },
 }, async ({ dir }) => {
@@ -315,11 +327,15 @@ tool('list_decks', {
 
 tool('create_deck', {
   title: 'デッキを作成',
-  description: '新しいデッキ (1 ファイルの HTML) を作る。名前は YYYY-MM-DD-<name>。表紙 1 枚だけの状態で作られるので、続けて write_deck で中身を書く。',
+  description:
+    'プレゼンテーション資料 (スライド・発表資料・LT・報告資料) を新しく作る。1 ファイルの HTML (デッキ) で、名前は YYYY-MM-DD-<name>。' +
+    '表紙 1 枚だけの状態で作られるので、続けて write_deck で中身を書く。',
   inputSchema: {
     name: z.string().regex(/^[\w.-]+$/).describe('英数字・ハイフンの短い名前 (例: git-branch-strategy)'),
     title: z.string().describe('発表タイトル (日本語可)'),
-    theme: z.string().optional().describe('テーマ名 (既定: default)。list_themes で一覧と雰囲気を確認できる'),
+    theme: z.string().optional().describe(
+      'テーマ名 (既定: default)。同梱: default (汎用) / dark (技術系) / corporate (報告・提案) / pop (LT・カジュアル) / mono (メッセージ重視)。' +
+      '自作テーマを含む一覧は list_themes'),
     transition: transitionSchema.optional(),
     brand: brandSchema.optional(),
     autoFullscreen: autoFullscreenSchema.optional(),
@@ -328,13 +344,17 @@ tool('create_deck', {
 }, async ({ name, title, theme, transition, brand, autoFullscreen, dir }) => {
   const P = await placeFor(dir);
   const { name: created } = createDeck(P, { name, title, theme, transition, brand, autoFullscreen });
-  return { content: [text({ created: deckInfo(readDeck(P, created)), next: 'write_deck でスライドを書いてください' })] };
+  const content = [text({ created: deckInfo(readDeck(P, created)), next: 'write_deck でスライドを書いてください' })];
+  if (!guideSent) {
+    content.push(text('まだデッキ作成ガイド (get_guide) を読んでいないので、ここに添付します。スライドはこのガイドの部品とルールに従って書いてください。\n\n' + guideText()));
+  }
+  return { content };
 });
 
 tool('read_deck', {
   title: 'デッキを読む',
   description:
-    'デッキの編集可能な部分 (スライド HTML・デッキ専用 CSS / JS・設定・埋め込み画像名) と revision を返す。修正前に必ず読むこと。' +
+    'プレゼンテーション資料 (スライド・デッキ) の編集可能な部分 (スライド HTML・デッキ専用 CSS / JS・設定・埋め込み画像名) と revision を返す。修正前に必ず読むこと。' +
     'write_deck / replace_slide に revision を渡すと、読んだ後に他で変更されていた場合に上書きを防げる。',
   inputSchema: { name: deckName, dir: dirSchema },
   annotations: { readOnlyHint: true },
@@ -350,15 +370,28 @@ tool('read_deck', {
   };
 });
 
+const AFTER_WRITE = 'audit が ok: false なら issues を直して書き込み直す。ok: true なら screenshot_deck で見た目を確認する (画像を見られる場合)';
+
+/** 書き込み後の自動検査。ブラウザがない環境などで検査できなくても、書き込み自体は成功として返す */
+async function autoAudit(file) {
+  try {
+    return summarizeAudit(await auditDeck(file));
+  } catch (e) {
+    console.error('[auto-audit]', e);
+    return { skipped: `自動検査を実行できませんでした: ${e.message || e}` };
+  }
+}
+
 const revisionSchema = z.string().optional().describe('read_deck が返した revision (指定すると、他で変更されていた場合は保存しない)');
 
 tool('write_deck', {
   title: 'デッキを書き込む',
   description:
-    'デッキの内容を書き込む。指定した項目だけ置き換え、省略した項目はそのまま残る。' +
+    'プレゼンテーション資料 (デッキ) のスライドを書き込む。指定した項目だけ置き換え、省略した項目はそのまま残る。' +
     'slides は <section class="slide">...</section> の並び (全スライド分。id の重複やスライド外の要素はエラー)。' +
     '埋め込まれたエンジン・テーマ・ブランドは変わらない (theme を変えた場合はテーマだけ入れ替わる。最新化は upgrade_deck)。' +
-    '保存前の内容は履歴に残る (list_history / restore_history)。',
+    '保存前の内容は履歴に残る (list_history / restore_history)。' +
+    '書き込み後に自動でレイアウトを検査し、結果を audit に返す (ok: false なら issues を直して書き込み直す)。',
   inputSchema: {
     name: deckName,
     slides: z.string().optional().describe('全スライドの HTML (<section class="slide"> の並び)'),
@@ -374,12 +407,14 @@ tool('write_deck', {
   },
 }, async ({ name, revision, dir, ...fields }) => {
   const d = writeDeck(await placeFor(dir), name, fields, { revision });
-  return { content: [text({ saved: deckInfo(d), revision: d.revision, next: 'audit_deck と screenshot_deck で確認してください' })] };
+  return { content: [text({ saved: deckInfo(d), revision: d.revision, audit: await autoAudit(d.file), next: AFTER_WRITE })] };
 });
 
 tool('replace_slide', {
   title: 'スライドを 1 枚差し替え',
-  description: '指定したスライド 1 枚を置き換える。target は 1 始まりの番号、またはスライドの id (id での指定を推奨)。',
+  description:
+    'プレゼンテーション資料 (デッキ) のスライドを 1 枚だけ置き換える。target は 1 始まりの番号、またはスライドの id (id での指定を推奨)。' +
+    '書き込み後に自動でレイアウトを検査し、結果を audit に返す。',
   inputSchema: {
     name: deckName,
     target: z.union([z.number().int().min(1), z.string()]).describe('スライド番号 (1 始まり) または id'),
@@ -389,7 +424,7 @@ tool('replace_slide', {
   },
 }, async ({ name, target, slide, revision, dir }) => {
   const d = replaceSlide(await placeFor(dir), name, target, slide, { revision });
-  return { content: [text({ saved: deckInfo(d), revision: d.revision })] };
+  return { content: [text({ saved: deckInfo(d), revision: d.revision, audit: await autoAudit(d.file), next: AFTER_WRITE })] };
 });
 
 tool('add_asset', {
@@ -443,11 +478,12 @@ tool('restore_history', {
 tool('audit_deck', {
   title: 'レイアウトを検査',
   description:
-    'ヘッドレスブラウザでデッキを開き、次の項目を検査する: はみ出し・切れ (overflow)、文字の重なり (overlap)、' +
+    'ヘッドレスブラウザでプレゼンテーション資料 (スライド・デッキ) を開き、次の項目を検査する: はみ出し・切れ (overflow)、文字の重なり (overlap)、' +
     'コントラスト不足 (contrast)、画像の欠落・読み込み失敗 (images)、小さすぎる文字 (smallText)、JS エラー (errors)、' +
     'エンジンの警告 (warnings)、外部への通信 (externalRequests。オフラインで動かなくなるので不可)。' +
     'ok: true は「検査した項目で問題が見つからなかった」という意味で、見た目の良し悪しは screenshot_deck で確認すること。' +
-    '意図的な重なり・はみ出しは .allow-overlap / .allow-overflow で除外できる。',
+    '意図的な重なり・はみ出しは .allow-overlap / .allow-overflow で除外できる。' +
+    'write_deck / replace_slide は書き込み後に同じ検査を自動で行うので、これは書き込まずに検査し直したいときに使う。',
   inputSchema: { name: deckName, dir: dirSchema },
   annotations: { readOnlyHint: true },
 }, async ({ name, dir }) => {
@@ -458,7 +494,7 @@ tool('audit_deck', {
 tool('screenshot_deck', {
   title: 'スライドを撮影',
   description:
-    'スライドの見た目を画像で返す。slides 省略時は全スライド (枚数が多い場合は数枚ずつ指定するとよい)。' +
+    'プレゼンテーション資料のスライドの見た目を画像で返す。slides 省略時は全スライド (枚数が多い場合は数枚ずつ指定するとよい)。' +
     'step 省略時は全ステップ表示・アニメーション完了後の最終状態。数値を指定するとそのステップ数まで表示した状態。',
   inputSchema: {
     name: deckName,
@@ -529,7 +565,7 @@ async function ensureDeckServer() {
 tool('open_deck', {
   title: 'ブラウザで開く',
   description:
-    'ユーザーの既定のブラウザでデッキを開く (発表・確認用)。ローカルサーバー経由で開くので、' +
+    'ユーザーの既定のブラウザでプレゼンテーション資料 (スライド・デッキ) を開く (発表・確認用。完成したら開いて見せる)。ローカルサーバー経由で開くので、' +
     'ユーザーは E キーで文字を直して Ctrl+S で元のファイルに直接保存できる。' +
     'fullscreen: true にすると Chrome / Edge を全画面 (タブ・アドレスバーなし) で起動する。ユーザーが「発表する」「全画面で開いて」と言ったときに使う。',
   inputSchema: {
@@ -580,7 +616,9 @@ tool('repair_deck', {
 
 tool('export_deck', {
   title: 'PDF に出力',
-  description: 'デッキを 16:9 の PDF に出力する (アニメーションなし、全ステップ表示)。HTML はデッキファイル自体がそのまま配布できる。',
+  description:
+    'デッキを 16:9 の PDF に出力する (アニメーションなし、全ステップ表示)。ユーザーが PDF を求めたときだけ使う' +
+    ' (HTML のデッキファイル自体がそのまま配布・発表できるので、頼まれていなければ作らない)。',
   inputSchema: { name: deckName, dir: dirSchema },
 }, async ({ name, dir }) => {
   const d = readDeck(await placeFor(dir), name);

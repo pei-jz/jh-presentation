@@ -8,6 +8,20 @@ Decks record the engine version that built them (`<meta name="generator">`). Wri
 engine; run `upgrade_deck` / `npm run upgrade` to move a deck to the current engine. The edit protocol version is
 documented in `docs/edit-protocol.md`; hosts and save servers refuse edits from decks with a different version.
 
+## [Unreleased]
+
+### Added
+- `write_deck` and `replace_slide` audit the deck after saving and return the result as `audit` (one line when
+  nothing is found), so models that skip `audit_deck` or cannot see screenshots still get the layout problems.
+- `create_deck` returns the authoring guide when `get_guide` has not been read in the session.
+- The authoring guide has verified examples (flow with labelled arrows, comparison, numbers, code with notes) and a
+  list of layouts that break (hand-made boxes and arrows, fixed heights, inline styles).
+- `docs/usage.md`: how to ask for a deck in each AI client.
+
+### Changed
+- Server instructions and tool descriptions name presentations, slides and 発表資料, so clients that choose tools
+  by the request's words find them. `export_deck` is described as "only when the user asks for a PDF".
+
 ## [0.6.0]
 
 ### Changed

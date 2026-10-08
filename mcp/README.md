@@ -55,7 +55,7 @@ AI クライアント (Claude Desktop / Claude Code / VS Code など) から、H
 | | `get_theme_guide` / `create_theme` | テーマ作成ガイド / 自作テーマの保存 |
 | テンプレート | `list_templates` | 依頼文テンプレートの一覧と本文 |
 | デッキ | `list_decks` / `read_deck` | 一覧・内容の読み込み |
-| | `create_deck` / `write_deck` / `replace_slide` | 作成・書き込み・1 枚だけ差し替え (テーマ・ブランド位置も指定可) |
+| | `create_deck` / `write_deck` / `replace_slide` | 作成・書き込み・1 枚だけ差し替え (テーマ・ブランド位置も指定可)。書き込みのたびに `audit_deck` と同じ検査を行い、結果を `audit` に返す。`get_guide` を読む前に `create_deck` を呼ぶと、戻り値にガイドを添える |
 | | `add_asset` | 画像・動画をデッキに埋め込む (`<img data-asset="名前">` で参照) |
 | | `upgrade_deck` | 埋め込まれたエンジン・テーマ・ブランドを最新にする (書き込みでは変わらない。明示的に実行したときだけ) |
 | | `list_history` / `restore_history` | 保存履歴 (書き込み前の版を最大 20 件) / 前の版に戻す |
@@ -63,6 +63,8 @@ AI クライアント (Claude Desktop / Claude Code / VS Code など) から、H
 | | `screenshot_deck` | スライドを画像にして AI に返す (AI が見て直せる) |
 | 出力 | `open_deck` / `export_deck` | ブラウザで開く (ローカルサーバー経由。E キーで文字を直して Ctrl+S で元のファイルに直接保存できる。`fullscreen: true` で全画面のアプリウィンドウで起動) / PDF に出力 |
 | 復旧 | `repair_deck` | ブラウザの「名前を付けて保存」で壊れたデッキを元に戻す (`list_decks` で broken と出るもの) |
+
+依頼の書き方 (クライアントごとに道具の名前を書くべきか、など) は [docs/usage.md](../docs/usage.md) を参照。
 
 ## 依頼文テンプレート (プロンプト)
 
