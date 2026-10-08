@@ -2,6 +2,8 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
+import fs from 'node:fs';
+import os from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { chromium } from 'playwright-core';
 import { findBrowser } from '../tools/lib/browser.mjs';
@@ -140,6 +142,78 @@ test('階層マップ: 深い矢印は上の階層で集約され、中に入る
   await page.click('#dg-drill .dg-node[data-id="stock"]');
   await settle();
   assert.equal((await view()).level, '');
+});
+
+test('データの流れ: 階層をまたいで強調され、▶ で 1 区間ずつ追うと階層を自動で移る', async () => {
+  const settle = () => page.evaluate(() => window.Deck.settled(4000));
+  const state = () => q(() => {
+    const c = document.querySelector('#dg-drill .dg');
+    const lab = (g) => g.querySelector('.dg-edge-label')?.textContent || '';
+    return {
+      level: c.getAttribute('data-level'),
+      flowing: [...c.querySelectorAll('.dg-edge.is-flowing')].map(lab).sort(),
+      current: [...c.querySelectorAll('.dg-edge.is-current')].map(lab),
+      reversed: [...c.querySelectorAll('.dg-edge.is-flowing')].filter((g) => g.querySelector('animateMotion').getAttribute('keyPoints') === '1;0').map(lab),
+      caption: c.querySelector('.dg-caption').hidden ? '' : c.querySelector('.dg-caption').textContent,
+    };
+  });
+
+  // steps の flow + upto: 5 区間目 (在庫 API → 在庫の引当 = 戻り) が見える階層へ自動で入る
+  await goto('dg-drill', 3);
+  await settle();
+  const st = await state();
+  assert.equal(st.level, 'order.api');
+  assert.deepEqual(st.current, ['引当']);
+  assert.deepEqual(st.reversed, ['引当'], '戻りのデータは点が逆向きに流れる');
+
+  // 全体で「流れ」ボタンから選ぶと、集約した矢印に沿って流れ全体が光る
+  await goto('dg-drill', 0);
+  await settle();
+  await page.click('#dg-drill .dg-flow-pick');
+  await page.click('#dg-drill .dg-flowmenu-item[data-flow="order"]');
+  const all = await state();
+  assert.deepEqual(all.flowing, ['', '引当', '注文']);
+  assert.equal(all.caption, '注文の流れ: 画面から DB に保存されるまで');
+
+  // ▶ を 3 回: 3 区間目 (入力チェック → 在庫の引当) は注文 API の中で見える
+  for (let i = 0; i < 3; i++) { await page.click('#dg-drill .dg-flow-next'); await settle(); }
+  const third = await state();
+  assert.equal(third.level, 'order.api');
+  assert.equal(third.caption, '注文の流れ 3/7');
+  assert.equal(third.current.length, 1);
+
+  // ▶ で次の区間 (在庫 API へ) → 送り手の階層のまま、境界の在庫システムへの矢印が「今」になる
+  await page.click('#dg-drill .dg-flow-next');
+  await settle();
+  assert.deepEqual((await state()).current, ['引当']);
+
+  // Esc は流れの強調を先にやめる (階層はそのまま)
+  await page.keyboard.press('Escape');
+  const stopped = await state();
+  assert.equal(stopped.level, 'order.api');
+  assert.equal(await q(() => document.querySelector('#dg-drill .dg-flowui').classList.contains('is-on')), false);
+});
+
+test('図のデータの誤り (流れの途切れ・存在しない id) は Deck.audit() の data で報告する', async () => {
+  assert.deepEqual(await q(() => window.Deck.audit().filter((i) => i.type === 'data')), [], '見本デッキにはデータの誤りがない');
+
+  // 誤りのある図を 1 枚足したデッキを開く
+  const bad = '<section class="slide" id="bad"><div class="diagram"><script type="application/json">' + JSON.stringify({
+    nodes: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }, { id: 'c', label: 'C' }],
+    edges: [{ from: 'a', to: 'zz' }, { from: 'a', to: 'b' }],
+    flows: [{ id: 'f', label: '流れ', path: ['a', 'b', 'c'] }],
+  }) + '</script></div></section>';
+  const file = path.join(os.tmpdir(), 'jh-diagram-bad.html');
+  fs.writeFileSync(file, fs.readFileSync(fileURLToPath(SAMPLE), 'utf8').replace('<!-- jh:slides -->', '<!-- jh:slides -->' + bad));
+  const p2 = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+  await p2.goto(pathToFileURL(file).href);
+  await p2.waitForFunction(() => document.documentElement.classList.contains('deck-ready'));
+  const issues = await p2.evaluate(() => window.Deck.audit().filter((i) => i.type === 'data').map((i) => [i.slide, i.message]));
+  await p2.close();
+  assert.deepEqual(issues, [
+    [1, '矢印の端のノードがありません: a -> zz'],
+    [1, '流れ「流れ」の b → c に矢印がありません (edges に書く)'],
+  ]);
 });
 
 test('ER 図: ステップでテーブルが増え、クリックで関連テーブルと結合キーが光る', async () => {

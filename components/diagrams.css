@@ -167,7 +167,7 @@
   max-width: 70%;
   padding: 6px 10px;
   border-radius: 999px;
-  font-size: 26px;
+  font-size: 28px;
   background: var(--surface);
   box-shadow: 0 6px 18px rgba(0, 0, 0, .08);
 }
@@ -200,6 +200,70 @@
 .dg-edge-count circle { fill: var(--bg); stroke: var(--accent); stroke-width: 3; }
 .dg-edge-count text { font-size: 22px; font-weight: 700; fill: var(--accent); text-anchor: middle; dominant-baseline: central; }
 .dg-enter { animation: dg-fade .45s ease both; }
+
+/* データの流れ: 今の区間を太く、右下に流れのボタン */
+.dg-edge.is-current .dg-edge-hi { stroke-width: 8; }
+.dg-edge.is-current .dg-dot { r: 12px; }
+.dg-node.is-current > .dg-shape { stroke: var(--accent); stroke-width: 7; }
+.dg-flowui {
+  position: absolute;
+  right: 16px;
+  bottom: 12px;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+.dg-flowbar {
+  display: flex;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .08);
+}
+.dg-flowbtn {
+  min-width: 52px;
+  height: 52px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 28px;
+  color: var(--fg);
+  background: var(--bg);
+  cursor: pointer;
+}
+.dg-flowbtn:hover:not(:disabled) { color: var(--accent); }
+.dg-flowbtn:disabled { opacity: .35; cursor: default; }
+.dg-flowui:not(.is-on) .dg-flow-prev, .dg-flowui:not(.is-on) .dg-flow-next, .dg-flowui:not(.is-on) .dg-flow-stop { display: none; }
+.dg-flowui.is-on .dg-flow-pick { font-weight: 700; color: var(--accent); }
+.dg-flowmenu {
+  display: flex;
+  flex-direction: column;
+  min-width: 280px;
+  padding: 8px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, .18);
+}
+.dg-flowmenu[hidden] { display: none; }
+.dg-flowmenu-item {
+  padding: 12px 18px;
+  border: 0;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 28px;
+  text-align: left;
+  color: var(--fg);
+  background: none;
+  cursor: pointer;
+}
+.dg-flowmenu-item:hover { background: var(--surface); }
+.dg-flowmenu-item.is-active { font-weight: 700; color: var(--accent); }
+.deck-print-mode .dg-flowui, .deck-thumb-slide .dg-flowui, .deck-print-mode .dg-crumbs { display: none !important; }
 
 /* ---- ER 図 ------------------------------------------------------------ */
 .er-table { transition: opacity .35s; }
@@ -453,3 +517,4 @@
   background: var(--code-fg);
   animation: deck-caret .9s steps(1) infinite;
 }
+.dg:has(> .dg-flowui) > .dg-caption { max-width: calc(100% - 480px); }

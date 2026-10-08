@@ -22,6 +22,7 @@
   var Deck = window.Deck;
   var IS_PRINT = Deck && Deck.mode === 'print';
   var instances = [];
+  var dataIssues = []; // 図のデータの誤り (Deck.audit() で報告する)
 
   // ------------------------------------------------------------------
   // 共通ユーティリティ
@@ -124,14 +125,16 @@
   Camera.prototype.to = function (target, animate) {
     var self = this;
     cancelAnimationFrame(this.raf);
+    if (this.done) { this.done(); this.done = null; } // 途中で止めた移動も完了扱いにする (settled が待ち続けないように)
     if (!animate || IS_PRINT) { this.apply(target.slice()); return Promise.resolve(); }
     var from = this.vb.slice(), start = null, dur = 650;
     return track(new Promise(function (resolve) {
+      self.done = resolve;
       function frame(t) {
         if (start == null) start = t;
         var p = Math.min(1, (t - start) / dur), k = ease(p);
         self.apply(from.map(function (v, i) { return v + (target[i] - v) * k; }));
-        if (p < 1) self.raf = requestAnimationFrame(frame); else resolve();
+        if (p < 1) self.raf = requestAnimationFrame(frame); else { self.done = null; resolve(); }
       }
       self.raf = requestAnimationFrame(frame);
     }));
@@ -478,7 +481,7 @@
   //   外とつながる部品は、外側のノードを画面の端 (境界ノード) に出して矢印を引く。
   // ------------------------------------------------------------------
   function needsDrill(data) {
-    if (data.drill) return true;
+    if (data.drill || (Array.isArray(data.flows) && data.flows.length)) return true;
     var top = {}, nested = {};
     data.nodes.forEach(function (n) { top[n.id] = true; });
     var deep = false;
@@ -495,6 +498,10 @@
     var uid = 'dg' + (++uidSeq);
     container.classList.add('dg', 'is-drill');
     var rootDir = data.direction === 'TB' ? 'TB' : 'LR';
+    function problem(message) { // データの誤りは Deck.audit() で type: data として報告する
+      console.warn('[diagram] ' + message);
+      dataIssues.push({ container: container, message: message });
+    }
 
     // ---- ノードの木と、すべての矢印 ----
     var info = { '': { id: '', label: data.title || '全体', parent: null, kids: [], raw: { detail: '' }, box: data } };
@@ -502,7 +509,7 @@
     (function walk(pid, box) {
       (box.nodes || []).forEach(function (n) {
         var id = String(n.id);
-        if (info[id]) console.warn('[diagram] ノードの id が重複しています: ' + id);
+        if (info[id]) problem('ノードの id が重複しています: ' + id);
         info[id] = { id: id, label: n.label == null ? id : n.label, parent: pid, kids: [], raw: n, box: n.children };
         info[pid].kids.push(id);
         if (n.children && n.children.nodes && n.children.nodes.length) walk(id, n.children);
@@ -512,11 +519,32 @@
     (function collect(box) {
       (box.edges || []).forEach(function (e) {
         var from = String(e.from), to = String(e.to);
-        if (!info[from] || !info[to] || from === '' || to === '') { console.warn('[diagram] 矢印の端のノードがありません: ' + from + ' -> ' + to); return; }
+        if (!info[from] || !info[to] || from === '' || to === '') { problem('矢印の端のノードがありません: ' + from + ' -> ' + to); return; }
         allEdges.push(Object.assign({}, e, { from: from, to: to, key: from + '->' + to }));
       });
       (box.nodes || []).forEach(function (n) { if (n.children && n.children.nodes && n.children.nodes.length) collect(n.children); });
     })(data);
+    var edgeByKey = {};
+    allEdges.forEach(function (e) { if (!edgeByKey[e.key]) edgeByKey[e.key] = e; });
+
+    // ---- データの流れ (flows): path の隣同士を 1 区間とし、それぞれを矢印 (逆向きも可) に対応させる ----
+    var flows = (Array.isArray(data.flows) ? data.flows : []).map(function (f, fi) {
+      var id = String(f.id == null ? fi : f.id), label = f.label || id;
+      var pts = (f.path || []).map(function (pt) { return typeof pt === 'object' && pt ? { id: String(pt.id), note: pt.note || '' } : { id: String(pt), note: '' }; });
+      var segs = [];
+      pts.forEach(function (pt, i) {
+        if (!info[pt.id] || pt.id === '') { problem('流れ「' + label + '」の path にないノードがあります: ' + pt.id); return; }
+        if (!i || !info[pts[i - 1].id]) return;
+        var a = pts[i - 1].id, b = pt.id, e = edgeByKey[a + '->' + b], rev = false;
+        if (!e && edgeByKey[b + '->' + a]) { e = edgeByKey[b + '->' + a]; rev = true; }
+        if (!e) problem('流れ「' + label + '」の ' + a + ' → ' + b + ' に矢印がありません (edges に書く)');
+        segs.push({ from: a, to: b, key: e ? e.key : null, rev: rev, note: pt.note });
+      });
+      if (!segs.length) problem('流れ「' + label + '」の path は 2 つ以上のノードを並べます');
+      return { id: id, label: label, note: f.note || '', segs: segs };
+    }).filter(function (f) { return f.segs.length; });
+    var flowById = {};
+    flows.forEach(function (f) { flowById[f.id] = f; });
 
     function chain(id) { // id から根 ('') までの祖先 (自分を含む)
       var c = [];
@@ -534,6 +562,11 @@
       return repIn(id, lca);
     }
     function isAncestor(a, b) { return a !== b && chain(b).indexOf(a) >= 0; }
+    /** 流れの 1 区間を見せる階層: 両端のうち深いほうの親 (同じ深さなら送り手の親)。部品そのものの間のやり取りが見える */
+    function segLevel(sg) {
+      var pa = info[sg.from].parent, pb = info[sg.to].parent;
+      return chain(pb).length > chain(pa).length ? pb : pa;
+    }
     function uniq(arr) { return arr.filter(function (v, i) { return v && arr.indexOf(v) === i; }); }
 
     function drillNode(id, boundary) {
@@ -633,10 +666,35 @@
     var steps = Array.isArray(data.steps) ? data.steps : [];
     var stepNow = steps.length > 1 ? addStepMarkers(container, steps.length - 1) : function () { return 0; };
     var cur = null, selected = null, navTok = 0;
+    var flowState = null; // 強調中のデータの流れ { flow, upto (null = 全体、n = n 区間目まで), ui (流れボタンから選んだ) }
+    steps.forEach(function (st, i) {
+      if (typeof st.flow === 'string' && !flowById[st.flow]) problem('steps[' + i + '] の flow「' + st.flow + '」は flows にありません');
+    });
 
     function setCaption(text) { // 説明バーとパンくずの分だけ、図の表示枠を空ける (CSS)
       caption.set(text);
       container.classList.toggle('has-caption', !!text);
+    }
+    function curStep() { return steps[stepNow()] || {}; }
+    function stepFlow(st) { return typeof st.flow === 'string' ? flowById[st.flow] || null : null; }
+    function stepUpto(st, f) { return st.upto == null ? null : Math.max(1, Math.min(f.segs.length, Number(st.upto) || 1)); }
+    /** ステップが指す階層。at / zoom がなく、流れを順に追うステップなら、その区間が見える階層 */
+    function stepLevel(st) {
+      var at = st.at != null ? st.at : st.zoom, f = stepFlow(st);
+      if (at == null && f && stepUpto(st, f)) return segLevel(f.segs[stepUpto(st, f) - 1]);
+      return levelOf(at);
+    }
+    function flowCaption(fs) {
+      var segs = fs.flow.segs, seg = fs.upto ? segs[fs.upto - 1] : null;
+      var head = fs.flow.label + (fs.upto ? ' ' + fs.upto + '/' + segs.length : '');
+      var note = seg ? seg.note : fs.flow.note;
+      return head + (note ? ': ' + note : '');
+    }
+    function captionText() {
+      if (flowState && flowState.ui) return flowCaption(flowState);
+      var st = curStep();
+      if (cur === stepLevel(st)) return st.note || (flowState ? flowCaption(flowState) : '');
+      return flowState ? flowCaption(flowState) : '';
     }
 
     function draw(p, enter) {
@@ -655,9 +713,7 @@
       });
       drawEdges(layerEdges, lv.edges, lv.byId, uid, lv.nodes.concat(lv.bnodes));
       lv.nodes.concat(lv.bnodes).forEach(function (n) { drawDrillNode(n); });
-      // 説明バーは、ステップが指す階層にいる間だけ出す
-      var st = steps[stepNow()] || {};
-      setCaption(p === levelOf(st.at != null ? st.at : st.zoom) ? st.note : '');
+      setCaption(captionText()); // ステップの説明は、ステップが指す階層にいる間だけ出す
       cam.full = lv.full.slice();
       cam.apply(lv.full.slice());
       container.classList.toggle('is-inside', !!p);
@@ -692,7 +748,7 @@
           b.setAttribute('aria-current', 'location');
           b.addEventListener('click', function () { if (info[id].raw.detail) panel.show(b.textContent, info[id].raw.detail); });
         } else {
-          b.addEventListener('click', function () { selected = null; panel.hide(); go(id, true).then(function () { setFocus(null, null); }); });
+          b.addEventListener('click', function () { navigate(id); });
         }
       });
     }
@@ -717,6 +773,17 @@
       return Promise.resolve(true);
     }
 
+    /** 利用者の操作で階層を移る (選択を解き、移った先で強調を付け直す) */
+    function navigate(p, then) {
+      selected = null;
+      panel.hide();
+      return go(p, true).then(function (ok) {
+        if (!ok) return;
+        baseFocus();
+        if (then) then();
+      });
+    }
+
     /** 表示中の階層で見えているノード id に置き換える (深いノード・外のノードの id でも指定できる) */
     function visibleId(id) {
       var lv = level(cur);
@@ -727,21 +794,59 @@
       return r && lv.byId[r] ? r : null;
     }
 
-    function setFocus(focusIds, flowKeys) {
+    /**
+     * 強調: focusIds のノード (と、その間の矢印) を残して他を薄くし、flowKeys の矢印に点を流す。
+     * opt.reverse: 矢印と逆向きに点を流す元の矢印の key、opt.current: 今の区間の元の矢印の key、opt.currentNodes: 今の区間の両端
+     */
+    function setFocus(focusIds, flowKeys, opt) {
+      opt = opt || {};
       var lv = level(cur);
       var focus = focusIds && focusIds.length ? new Set(focusIds.map(visibleId).filter(Boolean)) : null;
       var flow = flowKeys ? new Set(flowKeys) : null;
+      var currentNodes = new Set((opt.currentNodes || []).map(visibleId).filter(Boolean));
       container.classList.toggle('has-focus', !!focus);
       layerNodes.querySelectorAll(':scope > .dg-node').forEach(function (g) {
-        g.classList.toggle('is-focus', !!focus && focus.has(g.getAttribute('data-id')));
+        var id = g.getAttribute('data-id');
+        g.classList.toggle('is-focus', !!focus && focus.has(id));
+        g.classList.toggle('is-current', currentNodes.has(id));
       });
       layerEdges.querySelectorAll(':scope > .dg-edge').forEach(function (g) {
         var e = lv.edges[Number(g.getAttribute('data-idx'))];
-        var inFlow = !!flow && (flow.has(e.key) || e.items.some(function (i) { return flow.has(i.key); }));
+        var hits = flow ? e.items.filter(function (i) { return flow.has(i.key); }) : [];
+        var inFlow = !!flow && (flow.has(e.key) || hits.length > 0);
         var on = !!focus && focus.has(e.from) && focus.has(e.to);
         g.classList.toggle('is-focus', on || inFlow);
         g.classList.toggle('is-flowing', (flow ? inFlow : e.flow) && !IS_PRINT);
+        g.classList.toggle('is-current', !!opt.current && e.items.some(function (i) { return i.key === opt.current; }));
+        // 戻りのデータ (矢印と逆向きの流れ) は、点を逆向きに動かす
+        var rev = !!opt.reverse && hits.length > 0 && hits.every(function (i) { return opt.reverse.has(i.key); });
+        g.querySelectorAll('animateMotion').forEach(function (am) {
+          if (rev) { am.setAttribute('keyPoints', '1;0'); am.setAttribute('keyTimes', '0;1'); am.setAttribute('calcMode', 'linear'); }
+          else { am.removeAttribute('keyPoints'); am.removeAttribute('keyTimes'); am.removeAttribute('calcMode'); }
+        });
       });
+    }
+
+    /** データの流れを強調する (upto があれば、その区間までを強調し、最後の区間を「今」として目立たせる) */
+    function flowFocus(fs) {
+      var segs = fs.upto ? fs.flow.segs.slice(0, fs.upto) : fs.flow.segs;
+      var ids = [], keys = [], rev = new Set();
+      segs.forEach(function (sg) {
+        ids.push(sg.from, sg.to);
+        if (sg.key) { keys.push(sg.key); if (sg.rev) rev.add(sg.key); }
+      });
+      var last = fs.upto ? segs[segs.length - 1] : null;
+      setFocus(ids, keys, { reverse: rev, current: last && last.key, currentNodes: last ? [last.from, last.to] : [] });
+    }
+
+    /** 選択のないときの強調: 流れを選んでいればその流れ、ステップが指す階層ならステップの指定 */
+    function baseFocus() {
+      var st = curStep();
+      if (flowState) flowFocus(flowState);
+      else if (cur === stepLevel(st)) setFocus(st.focus, st.flow);
+      else setFocus(null, null);
+      setCaption(captionText());
+      updateFlowUI();
     }
 
     /** steps の at / zoom から階層を決める (中身のないノードなら、それが見える親の階層) */
@@ -754,11 +859,13 @@
     function applyStep(animate) {
       selected = null;
       panel.hide();
-      var st = steps[stepNow()] || {};
-      setCaption(st.note);
-      return go(levelOf(st.at != null ? st.at : st.zoom), animate).then(function (ok) {
+      var st = curStep(), f = stepFlow(st);
+      flowState = f ? { flow: f, upto: stepUpto(st, f), ui: false } : null;
+      closeFlowMenu();
+      setCaption(captionText());
+      return go(stepLevel(st), animate).then(function (ok) {
         if (!ok) return;
-        setFocus(st.focus, st.flow);
+        baseFocus();
         var sel = st.select && visibleId(st.select);
         if (sel) showDetail(level(cur).byId[sel]);
       });
@@ -773,18 +880,8 @@
     function selectNode(id) {
       var lv = level(cur), n = lv.byId[id];
       if (!n) return;
-      if (n.boundary) { // 外のノード: それが見える階層へ移って選ぶ
-        selected = null;
-        panel.hide();
-        go(info[id].parent, true).then(function (ok) { if (ok) { setFocus(null, null); selectNode(id); } });
-        return;
-      }
-      if (n.hasKids) {
-        selected = null;
-        panel.hide();
-        go(id, true).then(function (ok) { if (ok) setFocus(null, null); });
-        return;
-      }
+      if (n.boundary) { navigate(info[id].parent, function () { selectNode(id); }); return; } // 外のノード: それが見える階層へ移って選ぶ
+      if (n.hasKids) { navigate(id); return; }
       if (selected === id) { clearSelection(); return; }
       selected = id;
       var near = lv.edges.filter(function (e) { return e.from === id || e.to === id; });
@@ -798,11 +895,13 @@
       if (selected === key) { clearSelection(); return; }
       selected = key;
       setFocus([e.from, e.to], [e.key]);
-      var list = e.items.map(function (i) {
+      var html = '<ul>' + e.items.map(function (i) {
         var extra = [i.label, (i.data || []).join('・')].filter(Boolean).join(' / ');
         return '<li><b>' + nodeLabel(i.from) + '</b> → <b>' + nodeLabel(i.to) + '</b>' + (extra ? '<br><span class="muted">' + esc(extra) + '</span>' : '') + '</li>';
-      }).join('');
-      panel.show(String(info[e.from].label).replace(/\n/g, ' ') + ' → ' + String(info[e.to].label).replace(/\n/g, ' '), '<ul>' + list + '</ul>');
+      }).join('') + '</ul>';
+      var through = flows.filter(function (f) { return f.segs.some(function (sg) { return e.items.some(function (i) { return i.key === sg.key; }); }); });
+      if (through.length) html += '<p class="muted">通る流れ: ' + through.map(function (f) { return esc(f.label); }).join('、') + '</p>';
+      panel.show(String(info[e.from].label).replace(/\n/g, ' ') + ' → ' + String(info[e.to].label).replace(/\n/g, ' '), html);
     }
 
     function clearSelection() {
@@ -810,16 +909,75 @@
       if (!selected && !open) return false;
       selected = null;
       panel.hide();
-      var st = steps[stepNow()] || {};
-      if (cur === levelOf(st.at != null ? st.at : st.zoom)) setFocus(st.focus, st.flow); else setFocus(null, null);
+      baseFocus();
       return true;
     }
 
     function up() {
       if (!cur) return false;
+      navigate(info[cur].parent);
+      return true;
+    }
+
+    // ---- データの流れ: 右下の「流れ」ボタン (一覧から選ぶ・1 区間ずつ追う) ----
+    var flowUI = null;
+    if (flows.length && !IS_PRINT) {
+      flowUI = h('div', 'dg-flowui', container);
+      flowUI.addEventListener('click', function (ev) { ev.stopPropagation(); });
+      var menu = h('div', 'dg-flowmenu', flowUI);
+      menu.hidden = true;
+      flows.forEach(function (f) {
+        var b = h('button', 'dg-flowmenu-item', menu);
+        b.type = 'button';
+        b.setAttribute('data-flow', f.id);
+        b.textContent = f.label;
+        b.addEventListener('click', function () { closeFlowMenu(); pickFlow(f); });
+      });
+      var bar = h('div', 'dg-flowbar', flowUI);
+      var toggle = h('button', 'dg-flowbtn dg-flow-pick', bar, '流れ ▾');
+      toggle.addEventListener('click', function () { menu.hidden = !menu.hidden; });
+      var prevB = h('button', 'dg-flowbtn dg-flow-prev', bar, '◀');
+      var nextB = h('button', 'dg-flowbtn dg-flow-next', bar, '▶');
+      var stopB = h('button', 'dg-flowbtn dg-flow-stop', bar, '×');
+      [toggle, prevB, nextB, stopB].forEach(function (b) { b.type = 'button'; });
+      prevB.setAttribute('aria-label', '前の区間');
+      nextB.setAttribute('aria-label', '次の区間 (順に追う)');
+      stopB.setAttribute('aria-label', '流れの強調をやめる');
+      prevB.addEventListener('click', function () { if (flowState) moveFlow(flowState.upto && flowState.upto > 1 ? flowState.upto - 1 : null); });
+      nextB.addEventListener('click', function () { if (flowState) moveFlow(Math.min(flowState.flow.segs.length, (flowState.upto || 0) + 1)); });
+      stopB.addEventListener('click', function () { stopFlow(true); });
+    }
+    function closeFlowMenu() { if (flowUI) flowUI.querySelector('.dg-flowmenu').hidden = true; }
+    function updateFlowUI() {
+      if (!flowUI) return;
+      var on = !!flowState;
+      flowUI.classList.toggle('is-on', on);
+      flowUI.querySelector('.dg-flow-pick').textContent = on ? flowState.flow.label + ' ▾' : '流れ ▾';
+      flowUI.querySelectorAll('.dg-flowmenu-item').forEach(function (b) { b.classList.toggle('is-active', on && b.getAttribute('data-flow') === flowState.flow.id); });
+      flowUI.querySelector('.dg-flow-prev').disabled = !on || !flowState.upto;
+      flowUI.querySelector('.dg-flow-next').disabled = !on || flowState.upto === flowState.flow.segs.length;
+    }
+    /** 流れを選ぶ: 今の階層のまま、流れ全体を強調する */
+    function pickFlow(f) {
       selected = null;
       panel.hide();
-      go(info[cur].parent, true).then(function (ok) { if (ok) setFocus(null, null); });
+      flowState = { flow: f, upto: null, ui: true };
+      baseFocus();
+    }
+    /** 流れを n 区間目まで進める (null で全体)。その区間が見える階層へ自動で移る */
+    function moveFlow(n) {
+      flowState = { flow: flowState.flow, upto: n, ui: true };
+      if (!n) { baseFocus(); return; }
+      var p = segLevel(flowState.flow.segs[n - 1]);
+      if (p === cur) baseFocus(); else navigate(p);
+    }
+    /** 流れの強調をやめる (ステップが指定した流れに戻す)。force: ステップの流れも消す */
+    function stopFlow(force) {
+      if (!flowState || (!flowState.ui && !force)) return false;
+      var st = curStep(), f = force ? null : stepFlow(st);
+      flowState = f ? { flow: f, upto: stepUpto(st, f), ui: false } : null;
+      closeFlowMenu();
+      baseFocus();
       return true;
     }
 
@@ -835,11 +993,11 @@
       ev.stopPropagation();
       selectEdge(level(cur).edges[Number(g.getAttribute('data-idx'))]);
     });
-    svgEl.addEventListener('click', function () { if (selected) clearSelection(); });
+    svgEl.addEventListener('click', function () { closeFlowMenu(); if (selected) clearSelection(); });
 
     instances.push({
       container: container,
-      reset: function () { return clearSelection() || up(); },
+      reset: function () { return clearSelection() || stopFlow() || up(); }, // Esc: 詳細 → 流れ → 上の階層の順に戻す
       back: function () { return up(); },
     });
     onSlideState(container, function () { applyStep(true); }, function () { selected = null; });
@@ -1528,6 +1686,15 @@
   document.querySelectorAll('.stack3d').forEach(function (el) { safe(renderStack, el); });
   document.querySelectorAll('.compare').forEach(function (el) { safe(renderCompare, el); });
   document.querySelectorAll('.terminal').forEach(function (el) { safe(renderTerminal, el); });
+
+  if (Deck && Deck.addAuditor) {
+    Deck.addAuditor(function () {
+      return dataIssues.map(function (d) {
+        var sec = d.container.closest('section.slide');
+        return { type: 'data', slide: sec ? Deck.slides.indexOf(sec) + 1 : 0, element: 'div.' + (d.container.className.split(' ')[0] || 'diagram'), message: d.message };
+      });
+    });
+  }
 
   // Esc: 表示中のスライドで詳細を開いている図があれば、先に閉じる (エンジンの一覧表示より優先)
   // Esc / Backspace: 階層マップの中に入っていれば 1 つ上の階層へ戻る (エンジンの「前へ」より優先)

@@ -59,6 +59,7 @@
   }
 
   /** 部品から、進行中の演出を登録する (settled が完了を待つ) */
+  var auditors = [];
   function track(promise) {
     busyTasks.push(promise);
     promise.then(function () { busyTasks.splice(busyTasks.indexOf(promise), 1); }, function () { busyTasks.splice(busyTasks.indexOf(promise), 1); });
@@ -78,6 +79,8 @@
     prev: prev,
     goto: function (index, step) { go(index, step == null ? 0 : step); },
     audit: audit,
+    /** 部品から検査を追加する: fn() が { type, slide, element, ... } の配列を返す (例: 図のデータの誤り) */
+    addAuditor: function (fn) { auditors.push(fn); },
     whenReady: whenReady,
     settled: settled,
     track: track,
@@ -551,6 +554,7 @@
    *   contrast : 文字と背景のコントラスト比が 3:1 未満 (背景が単色の場合のみ) … 許可: .allow-low-contrast
    *   asset    : data-asset の画像が埋め込まれていない
    *   image    : 画像を読み込めない (壊れている・参照先がない)
+   *   data     : 部品のデータの誤り (図の矢印・データの流れが存在しない id を指している など)
    * 見た目の良し悪しまでは判定できないので、スクリーンショットでの確認と組み合わせる。
    */
   function audit(options) {
@@ -621,6 +625,9 @@
     missingAssets.forEach(function (m) {
       var sec = m.el.closest('section.slide');
       issues.push({ type: 'asset', slide: sec ? slides.indexOf(sec) + 1 : 0, element: describe(m.el), asset: m.name });
+    });
+    auditors.forEach(function (fn) {
+      try { issues.push.apply(issues, fn() || []); } catch (e) { console.error('[deck] 検査に失敗しました', e); }
     });
     document.body.classList.remove('deck-auditing');
     return issues;

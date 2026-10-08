@@ -130,11 +130,12 @@ export async function auditDeck(deckFile) {
         overlap: pick('overlap'),
         contrast: pick('contrast'),
         images: pick('asset', 'image'),
+        data: pick('data'),
         smallText: smallText.slice(0, 30),
       };
     });
     const warnings = log.warnings.filter((w) => w.startsWith('[deck]'));
-    const found = result.overflow.length + result.overlap.length + result.contrast.length + result.images.length +
+    const found = result.overflow.length + result.overlap.length + result.contrast.length + result.images.length + result.data.length +
       result.smallText.length + log.errors.length + warnings.length + log.external.length;
     return {
       ok: found === 0,
@@ -146,7 +147,7 @@ export async function auditDeck(deckFile) {
   });
 }
 
-const AUDIT_KEYS = ['overflow', 'overlap', 'contrast', 'images', 'smallText', 'errors', 'warnings', 'externalRequests'];
+const AUDIT_KEYS = ['overflow', 'overlap', 'contrast', 'images', 'data', 'smallText', 'errors', 'warnings', 'externalRequests'];
 
 /**
  * auditDeck の結果を、書き込みの戻り値に添える短い形にする (問題がなければ 1 行、あれば種類ごとに最大 10 件)

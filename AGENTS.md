@@ -59,7 +59,7 @@ tools/        serve (プレビュー) / new-deck / upgrade / pdf / gallery、lib
 
 1. プレビューサーバーを起動する: `npm run dev` → http://localhost:4000
 2. `http://localhost:4000/decks/<name>.html` を開き、ブラウザのコンソールで **`Deck.audit()`** を実行する
-   - 戻り値が空配列 `[]` なら「検査した項目では問題なし」。要素があれば `type` (overflow / clipped / overlap / contrast / asset / image) ごとに直す
+   - 戻り値が空配列 `[]` なら「検査した項目では問題なし」。要素があれば `type` (overflow / clipped / overlap / contrast / asset / image / data) ごとに直す
    - 意図的なはみ出し・重なり・低コントラストは `allow-overflow` / `allow-overlap` / `allow-low-contrast` クラスで除外する
    - 検査は見た目の良し悪しまでは判定しない。必ず 3 のスクリーンショット確認と組み合わせる
 3. 各スライドを `Deck.goto(i, Infinity)` (全ステップ表示) にしてスクリーンショットで目視確認する
