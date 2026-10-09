@@ -1820,6 +1820,7 @@ body.deck-print-mode {
 .dg-crumb-sep { color: var(--muted); }
 .dg-stackback { fill: var(--surface-2); stroke: var(--border); stroke-width: 3; }
 /* 図がパンくず (上)・説明バー (下) の裏に隠れないよう、表示枠を縮める */
+.dg.is-drill { display: flow-root; } /* svg の margin-top が親に抜けないように */
 .dg.is-drill.is-inside .dg-svg { margin-top: 64px; height: calc(100% - 64px); }
 .dg.is-drill.has-caption .dg-svg { height: calc(100% - 80px); }
 .dg.is-drill.is-inside.has-caption .dg-svg { height: calc(100% - 144px); }
@@ -4245,7 +4246,7 @@ body.deck-print-mode {
   function renderDiagram(container) {
     var data = readData(container);
     if (!data || !Array.isArray(data.nodes)) return;
-    if (needsDrill(data)) return renderDrill(container, data);
+    if (needsDrill(data) || container.hasAttribute('data-map')) return renderDrill(container, data);
     var uid = 'dg' + (++uidSeq);
     var dir = data.direction === 'TB' ? 'TB' : 'LR';
     var zoomMode = !!data.zoom;
@@ -4421,8 +4422,11 @@ body.deck-print-mode {
     s('path', { d: d, class: 'dg-edge-line dg-edge-hi', 'marker-end': 'url(#' + uid + '-arrow-a)', 'marker-start': e.both ? 'url(#' + uid + '-arrow-a)' : null }, g);
     // データの流れ (線の上を点が移動)
     for (var k = 0; k < 3; k++) {
-      var dot = s('circle', { r: 9, class: 'dg-dot' }, g);
-      var am = s('animateMotion', { dur: (e.speed || 1.8) + 's', repeatCount: 'indefinite', begin: (k * (e.speed || 1.8) / 3).toFixed(2) + 's' }, dot);
+      var begin = (k * (e.speed || 1.8) / 3).toFixed(2) + 's';
+      // 動き出す前の点は原点 (0, 0) に見えてしまうので、動き出すまで隠す
+      var dot = s('circle', { r: 9, class: 'dg-dot', visibility: k ? 'hidden' : null }, g);
+      if (k) s('set', { attributeName: 'visibility', to: 'visible', begin: begin }, dot);
+      var am = s('animateMotion', { dur: (e.speed || 1.8) + 's', repeatCount: 'indefinite', begin: begin }, dot);
       s('mpath', { href: '#' + id }, am);
     }
     if (e.label) {
@@ -4490,6 +4494,7 @@ body.deck-print-mode {
     var uid = 'dg' + (++uidSeq);
     container.classList.add('dg', 'is-drill');
     var rootDir = data.direction === 'TB' ? 'TB' : 'LR';
+    var mapMode = container.hasAttribute('data-map'); // マップ文書の中 (詳細パネルにつながりの一覧を付ける)
     function problem(message) { // データの誤りは Deck.audit() で type: data として報告する
       console.warn('[diagram] ' + message);
       dataIssues.push({ container: container, message: message });
@@ -4567,7 +4572,7 @@ body.deck-print-mode {
       n.hasKids = hasKids;
       n.boundary = !!boundary;
       if (boundary && it.parent) n.sub = info[it.parent].label; // どの中の部品かを示す
-      if (hasKids && !n.sub) { n.hint = 'クリックで中へ'; n.h = 130; }
+      if (hasKids && !n.sub) { n.hint = IS_PRINT && mapMode ? '中身は後のページ' : 'クリックで中へ'; n.h = 130; }
       if (boundary) n.detail = raw.detail || '';
       return n;
     }
@@ -4658,6 +4663,7 @@ body.deck-print-mode {
     var steps = Array.isArray(data.steps) ? data.steps : [];
     var stepNow = steps.length > 1 ? addStepMarkers(container, steps.length - 1) : function () { return 0; };
     var cur = null, selected = null, navTok = 0;
+    var dataState = null; // 強調中のデータの名前 (edges の data。マップ文書の「データ」で選ぶ)
     var flowState = null; // 強調中のデータの流れ { flow, upto (null = 全体、n = n 区間目まで), ui (流れボタンから選んだ) }
     steps.forEach(function (st, i) {
       if (typeof st.flow === 'string' && !flowById[st.flow]) problem('steps[' + i + '] の flow「' + st.flow + '」は flows にありません');
@@ -4711,6 +4717,12 @@ body.deck-print-mode {
       container.classList.toggle('is-inside', !!p);
       container.setAttribute('data-level', p);
       updateCrumbs();
+      emit();
+    }
+
+    /** 表示の変化を知らせる (マップ文書が URL・目次を合わせる) */
+    function emit() {
+      container.dispatchEvent(new CustomEvent('dg:change', { detail: { level: cur, selected: selected && selected.indexOf('edge:') !== 0 ? selected : null } }));
     }
 
     function drawDrillNode(n) {
@@ -4773,6 +4785,7 @@ body.deck-print-mode {
         if (!ok) return;
         baseFocus();
         if (then) then();
+        else if (mapMode && p && info[p].raw.detail) panel.show(String(info[p].label).replace(/\n/g, ' '), info[p].raw.detail + links(p, true));
       });
     }
 
@@ -4831,10 +4844,20 @@ body.deck-print-mode {
       setFocus(ids, keys, { reverse: rev, current: last && last.key, currentNodes: last ? [last.from, last.to] : [] });
     }
 
+    /** 指定したデータ (edges の data) が流れる矢印を強調する */
+    function dataFocus(name) {
+      var es = allEdges.filter(function (e) { return (e.data || []).indexOf(name) >= 0; });
+      var ids = [];
+      es.forEach(function (e) { ids.push(e.from, e.to); });
+      setFocus(ids, es.map(function (e) { return e.key; }));
+      container.classList.add('has-focus'); // 該当がなくても、他を薄くして「ない」ことを示す
+    }
+
     /** 選択のないときの強調: 流れを選んでいればその流れ、ステップが指す階層ならステップの指定 */
     function baseFocus() {
       var st = curStep();
       if (flowState) flowFocus(flowState);
+      else if (dataState) dataFocus(dataState);
       else if (cur === stepLevel(st)) setFocus(st.focus, st.flow);
       else setFocus(null, null);
       setCaption(captionText());
@@ -4864,8 +4887,41 @@ body.deck-print-mode {
     }
 
     function showDetail(n) {
-      if (n.detail || (n.sub && !n.boundary)) panel.show(String(n.label).replace(/\n/g, ' '), n.detail || esc(n.sub));
+      var extra = mapMode && !n.boundary ? links(n.id, false) : '';
+      if (n.detail || (n.sub && !n.boundary) || extra) panel.show(String(n.label).replace(/\n/g, ' '), (n.detail || (n.sub ? esc(n.sub) : '')) + extra);
     }
+
+    /** マップ文書の詳細パネル用: 入ってくる・出ていく矢印と、通る流れ (inside: id の中の部品も含めて数える) */
+    function links(id, inside) {
+      function within(x) { return x === id || (inside && isAncestor(id, x)); }
+      var ins = allEdges.filter(function (e) { return within(e.to) && !within(e.from); });
+      var outs = allEdges.filter(function (e) { return within(e.from) && !within(e.to); });
+      var through = flows.filter(function (f) { return f.segs.some(function (sg) { return within(sg.from) || within(sg.to); }); });
+      function li(e, other) {
+        var extra = [e.label, (e.data || []).join('・')].filter(Boolean).join(' / ');
+        return '<li><a href="#" data-dg-go="' + esc(other) + '">' + nodeLabel(other) + '</a>' + (extra ? ' <span class="muted">' + esc(extra) + '</span>' : '') + '</li>';
+      }
+      var html = '';
+      if (ins.length) html += '<h4>入ってくる (' + ins.length + ')</h4><ul>' + ins.map(function (e) { return li(e, e.from); }).join('') + '</ul>';
+      if (outs.length) html += '<h4>出ていく (' + outs.length + ')</h4><ul>' + outs.map(function (e) { return li(e, e.to); }).join('') + '</ul>';
+      if (through.length) html += '<h4>通る流れ</h4><ul>' + through.map(function (f) { return '<li><a href="#" data-dg-flow="' + esc(f.id) + '">' + esc(f.label) + '</a></li>'; }).join('') + '</ul>';
+      return html ? '<div class="dg-links">' + html + '</div>' : '';
+    }
+
+    /** id のノードが見える階層へ移り、中身のないノードなら選ぶ (目次・検索・URL から) */
+    function reveal(id) {
+      id = String(id == null ? '' : id);
+      if (!info[id] || id === '') return navigate('');
+      if (info[id].kids.length) return navigate(id);
+      return navigate(info[id].parent, function () { selected = null; selectNode(id); });
+    }
+    container.addEventListener('click', function (ev) { // 詳細パネルの中のリンク
+      var a = ev.target.closest && ev.target.closest('[data-dg-go], [data-dg-flow]');
+      if (!a) return;
+      ev.preventDefault();
+      if (a.hasAttribute('data-dg-go')) reveal(a.getAttribute('data-dg-go'));
+      else if (flowById[a.getAttribute('data-dg-flow')]) { dataState = null; pickFlow(flowById[a.getAttribute('data-dg-flow')]); }
+    });
 
     function nodeLabel(id) { return esc(String(info[id].label).replace(/\n/g, ' ')); }
 
@@ -4880,6 +4936,7 @@ body.deck-print-mode {
       setFocus([id].concat(near.map(function (e) { return e.from === id ? e.to : e.from; })), near.map(function (e) { return e.key; }));
       panel.hide();
       showDetail(n);
+      emit();
     }
 
     function selectEdge(e) {
@@ -4902,6 +4959,7 @@ body.deck-print-mode {
       selected = null;
       panel.hide();
       baseFocus();
+      emit();
       return true;
     }
 
@@ -4986,6 +5044,33 @@ body.deck-print-mode {
       selectEdge(level(cur).edges[Number(g.getAttribute('data-idx'))]);
     });
     svgEl.addEventListener('click', function () { closeFlowMenu(); if (selected) clearSelection(); });
+
+    /** マップ文書・テストから使う操作 */
+    container.jhDiagram = {
+      title: String(info[''].label),
+      nodes: function () { // 木の順 (親が先) のノード一覧
+        var out = [];
+        (function walk(p, depth) {
+          info[p].kids.forEach(function (id) {
+            var raw = info[id].raw;
+            out.push({ id: id, label: String(info[id].label).replace(/\n/g, ' '), parent: p, depth: depth, hasKids: info[id].kids.length > 0, kind: raw.kind || '', sub: raw.sub || '', tags: raw.tags || [], detail: raw.detail || '' });
+            walk(id, depth + 1);
+          });
+        })('', 0);
+        return out;
+      },
+      path: function (id) { return chain(id).reverse().map(function (x) { return String(info[x].label).replace(/\n/g, ' '); }); },
+      levels: function () { return [''].concat(this.nodes().filter(function (n) { return n.hasKids; }).map(function (n) { return n.id; })); },
+      levelNodeCount: function (p) { return info[p] ? info[p].kids.length : 0; },
+      dataNames: function () { return uniq([].concat.apply([], allEdges.map(function (e) { return e.data || []; }))); },
+      level: function () { return cur; },
+      selected: function () { return selected && selected.indexOf('edge:') !== 0 ? selected : null; },
+      reveal: reveal,
+      /** 階層 p をアニメーションなしで描く (印刷・検査用) */
+      drawLevel: function (p) { selected = null; panel.hide(); draw(p, false); baseFocus(); },
+      showData: function (name) { dataState = name || null; if (dataState) flowState = null; closeFlowMenu(); baseFocus(); },
+      svg: svgEl,
+    };
 
     instances.push({
       container: container,
@@ -5693,7 +5778,7 @@ body.deck-print-mode {
   window.addEventListener('keydown', function (ev) {
     if ((ev.key !== 'Escape' && ev.key !== 'Backspace') || ev.target.isContentEditable) return;
     if (/^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName)) return;
-    var active = document.querySelector('.slide.active');
+    var active = document.querySelector('.slide.active') || document.querySelector('.jh-map-stage');
     if (!active) return;
     var handled = false;
     instances.forEach(function (it) {

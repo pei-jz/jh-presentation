@@ -1,0 +1,182 @@
+/* =====================================================================
+ * マップ文書 (mapdoc.js) の見た目
+ * 図の部品はスライド (1920×1080 を縮小表示) 向けの大きさなので、ブラウザの画面向けに文字を小さくする
+ * ===================================================================== */
+
+body.jh-mapdoc {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: 100vh;
+  margin: 0;
+  overflow: hidden;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--fg);
+  background: var(--bg);
+}
+.jh-mapdoc #jh-map-data, .jh-mapdoc #jh-brand { display: none; }
+
+/* ---- 上の帯 ---------------------------------------------------------- */
+.jh-map-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.jh-map-brand { display: flex; align-items: center; font-weight: 700; color: var(--muted); }
+.jh-map-brand img { display: block; height: 28px; }
+.jh-map-title { margin: 0; font-family: var(--font-heading); font-size: 19px; font-weight: 700; color: var(--fg); }
+.jh-map-label { padding: 1px 8px; border: 1px solid var(--accent); border-radius: 999px; font-size: 12px; color: var(--accent); }
+.jh-map-tools { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.jh-map-btn, .jh-map-data, .jh-map-search input {
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--fg);
+  background: var(--bg);
+}
+.jh-map-btn { cursor: pointer; white-space: nowrap; }
+.jh-map-btn:hover { border-color: var(--accent); color: var(--accent); }
+.jh-map-toc-toggle { display: none; }
+.jh-map-search { position: relative; }
+.jh-map-search input { width: 240px; }
+.jh-map-search input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.jh-map-results {
+  position: absolute;
+  top: 40px;
+  right: 0;
+  z-index: 20;
+  width: 340px;
+  max-height: 60vh;
+  margin: 0;
+  padding: 6px;
+  overflow: auto;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .16);
+}
+.jh-map-results[hidden] { display: none; }
+.jh-map-result {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 6px;
+  font: inherit;
+  text-align: left;
+  color: var(--fg);
+  background: none;
+  cursor: pointer;
+}
+.jh-map-result:hover { background: var(--surface); }
+.jh-map-result-path { display: block; font-size: 12px; color: var(--muted); }
+.jh-map-noresult { padding: 8px 10px; color: var(--muted); }
+
+/* ---- 目次と図 ---------------------------------------------------------- */
+.jh-map-main { display: grid; grid-template-columns: 260px 1fr; min-height: 0; }
+.jh-map-toc { overflow: auto; padding: 12px 8px; border-right: 1px solid var(--border); background: var(--surface); }
+.jh-map-toc ul { margin: 0; padding: 0; list-style: none; }
+.jh-toc-item {
+  display: block;
+  width: 100%;
+  padding: 5px 10px 5px calc(10px + var(--depth, 0) * 16px);
+  border: 0;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  color: var(--fg);
+  background: none;
+  cursor: pointer;
+}
+.jh-toc-item.has-kids { font-weight: 700; }
+.jh-toc-item:hover { background: var(--accent-soft); }
+.jh-toc-item.is-current { color: var(--accent); background: var(--accent-soft); }
+.jh-toc-item.is-selected { color: var(--on-accent); background: var(--accent); }
+.jh-map-stage { position: relative; min-width: 0; min-height: 0; }
+.jh-map-stage > .dg { height: 100%; }
+
+/* 図の部品の大きさを画面向けに */
+.jh-mapdoc .dg-crumbs { top: 10px; left: 12px; padding: 3px 6px; font-size: 14px; }
+.jh-mapdoc .dg-crumb { padding: 2px 10px; }
+.jh-mapdoc .dg.is-drill.is-inside .dg-svg { margin-top: 44px; height: calc(100% - 44px); }
+.jh-mapdoc .dg.is-drill.has-caption .dg-svg { height: calc(100% - 56px); }
+.jh-mapdoc .dg.is-drill.is-inside.has-caption .dg-svg { height: calc(100% - 100px); }
+.jh-mapdoc .dg-caption { left: 12px; bottom: 10px; padding: 7px 14px; border-left-width: 5px; font-size: 14px; }
+.jh-mapdoc .dg-flowui { right: 12px; bottom: 10px; }
+.jh-mapdoc .dg-flowbtn { min-width: 34px; height: 34px; padding: 0 12px; font-size: 14px; }
+.jh-mapdoc .dg-flowmenu { min-width: 200px; }
+.jh-mapdoc .dg-flowmenu-item { padding: 7px 12px; font-size: 14px; }
+.jh-mapdoc .dg:has(> .dg-flowui) > .dg-caption { max-width: calc(100% - 320px); }
+.jh-mapdoc .dg-panel {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  box-sizing: border-box;
+  width: min(380px, 45%);
+  max-height: none;
+  padding: 18px 20px;
+  border-width: 0 0 0 1px;
+  border-color: var(--border);
+  border-radius: 0;
+  font-size: 14px;
+  box-shadow: -8px 0 24px rgba(0, 0, 0, .08);
+}
+.jh-mapdoc .dg-panel-title { font-size: 18px; }
+.jh-mapdoc .dg-panel-close { top: 10px; right: 10px; width: 32px; height: 32px; font-size: 20px; }
+.dg-links h4 { margin: 14px 0 4px; font-size: 13px; color: var(--muted); }
+.dg-links ul { margin: 0; padding-left: 1.1em; }
+.dg-links a { color: var(--accent); }
+
+/* ---- 狭い画面: 目次は引き出し ---------------------------------------------- */
+@media (max-width: 860px) {
+  .jh-map-main { grid-template-columns: 1fr; }
+  .jh-map-toc { position: fixed; top: 0; bottom: 0; left: 0; z-index: 30; width: 260px; transform: translateX(-100%); visibility: hidden; transition: transform .2s, visibility .2s; }
+  body.jh-toc-open .jh-map-toc { transform: none; visibility: visible; box-shadow: 8px 0 24px rgba(0, 0, 0, .18); }
+  .jh-map-toc-toggle { display: inline-block; }
+  .jh-map-head { flex-wrap: wrap; gap: 8px 10px; padding: 8px 12px; }
+  .jh-map-title { flex: 1; min-width: 0; font-size: 16px; }
+  .jh-map-tools { width: 100%; margin-left: 0; }
+  .jh-map-search { flex: 1; min-width: 0; }
+  .jh-map-search input { width: 100%; box-sizing: border-box; }
+  .jh-map-results { left: 0; width: auto; }
+  .jh-map-data { max-width: 40%; }
+  .jh-mapdoc .dg-panel { width: 100%; top: auto; height: 55%; border-width: 1px 0 0; }
+}
+
+/* ---- 印刷 (?print): 階層ごとに 1 ページ ------------------------------------ */
+@page { size: A4 landscape; margin: 12mm; }
+body.jh-map-printing { display: block; height: auto; overflow: visible; }
+body.jh-map-printing .jh-map-main { display: none; }
+.jh-map-print { padding: 0 18px; }
+.jh-print-page { padding: 18px 0; break-after: page; }
+.jh-print-page:last-child { break-after: auto; }
+.jh-print-page h2 { margin: 0 0 8px; font-size: 18px; }
+.jh-print-fig { height: 115mm; border: 1px solid var(--border); border-radius: 8px; }
+.jh-print-fig .dg-svg { width: 100%; height: 100%; }
+.jh-print-fig .dg-dot { display: none; }
+.jh-print-table { width: 100%; margin-top: 10px; font-size: 12px; border-collapse: collapse; }
+.jh-print-table > tr > th { width: 22%; font-size: 13px; color: var(--fg); text-align: left; vertical-align: top; }
+.jh-print-table > tr > th, .jh-print-table > tr > td { padding: 5px 8px; border-bottom: 1px solid var(--border); }
+.jh-print-table .table { font-size: 12px; }
+.jh-print-table .table th, .jh-print-table .table td { padding: 2px 6px; border-bottom-width: 1px; }
+.jh-print-table p { margin: 0 0 4px; }
+.jh-print-more { display: block; font-size: 11px; font-weight: 400; color: var(--muted); }
+@media print {
+  .jh-map-head { border: 0; background: none; }
+}
+.jh-mapdoc .dg-panel .table { font-size: 13px; }
+.jh-mapdoc .dg-panel .table th, .jh-mapdoc .dg-panel .table td { padding: 4px 6px; border-bottom-width: 1px; }
+/* 詳細パネルを開いている間は、図をパネルの左側に収める */
+.jh-mapdoc .dg:has(> .dg-panel:not([hidden])) > .dg-svg { width: calc(100% - min(380px, 45%)); }
+@media (max-width: 860px) {
+  .jh-mapdoc .dg:has(> .dg-panel:not([hidden])) > .dg-svg { width: 100%; height: 45%; }
+}

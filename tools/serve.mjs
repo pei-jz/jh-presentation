@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // ローカルプレビューサーバー (依存なし)
 //   npm run dev            → http://localhost:4000
-//   - decks/*.html の一覧、/gallery/ でテーマギャラリー
+//   - decks/*.html (デッキ) と maps/*.html (マップ文書) の一覧、/gallery/ でテーマギャラリー
 //   - デッキはファイルの内容のまま配信する (エンジンを変更したら npm run upgrade で埋め込み直す)
 //   - 自分の PC (127.0.0.1) からだけ接続でき、配信するのは decks/ と gallery/ の中だけ
 //   - ファイル保存で自動リロード (URL ハッシュでスライド位置は維持される)
@@ -11,7 +11,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { buildGallery } from './lib/gallery.mjs';
 import { parseDeck, isDeckHtml } from './lib/deckfile.mjs';
-import { ROOT, DECKS_DIR, repoCtx, repoThemes, listRepoDecks, resolveServedPath } from './lib/repo.mjs';
+import { parseMap } from './lib/mapfile.mjs';
+import { ROOT, DECKS_DIR, repoCtx, repoThemes, listRepoDecks, listRepoMaps, resolveServedPath } from './lib/repo.mjs';
 import { createSaveToken, injectSaveConfig, handleSave } from './lib/save-endpoint.mjs';
 import { saveDeckFile } from '../mcp/workspace.mjs';
 
@@ -75,6 +76,16 @@ function indexPage() {
       <span class="meta">${esc(d.info.theme)} / ${d.info.slideCount} 枚${d.info.brand !== 'none' ? ' / ブランド: ' + esc(d.info.brand) : ''}</span>
       <span class="links"><a href="/decks/${encodeURIComponent(d.name)}.html?print" target="_blank">印刷用</a></span>
     </li>`).join('');
+  const maps = listRepoMaps()
+    .map((d) => ({ ...d, info: parseMap(fs.readFileSync(d.file, 'utf8')) }))
+    .sort((a, b) => b.name.localeCompare(a.name))
+    .map((d) => `
+    <li>
+      <a class="title" href="/maps/${encodeURIComponent(d.name)}.html">${esc(d.info.title)}</a>
+      <span class="name">maps/${esc(d.name)}.html</span>
+      <span class="meta">${esc(d.info.theme)} / ノード ${d.info.nodeCount} 個</span>
+      <span class="links"><a href="/maps/${encodeURIComponent(d.name)}.html?print" target="_blank">印刷用</a></span>
+    </li>`).join('');
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>Decks</title>
 <style>
   body{margin:0;padding:48px;font-family:"BIZ UDPGothic","Yu Gothic UI",Meiryo,sans-serif;background:#f4f6fa;color:#1a1f2b}
@@ -90,6 +101,8 @@ function indexPage() {
 <h1>Decks</h1>
 <p><a href="/gallery/">テーマギャラリー</a>　/　<a href="/examples/sample.html">機能の見本</a>　/　スライド表示中に <b>?</b> キーで操作一覧、<b>S</b> で発表者ビュー</p>
 ${rows ? `<ul>${rows}</ul>` : '<p>decks/ にデッキがありません。<code>npm run new -- my-talk "タイトル"</code> で作成できます。</p>'}
+<h1 style="margin-top:40px">Maps</h1>
+${maps ? `<ul>${maps}</ul>` : '<p>maps/ にマップ文書がありません。<code>npm run new -- my-system "タイトル" --kind map</code> で作成できます (<a href="/examples/sample-map.html">見本</a>)。</p>'}
 ${RELOAD_SNIPPET}
 </body></html>`;
 }

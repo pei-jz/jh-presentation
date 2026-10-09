@@ -13,7 +13,8 @@ components/   部品ライブラリ (レイアウト・カード・コード・�
 themes/       同梱テーマ (default / dark / corporate / pop / mono)
 brand/        ブランド設定 (名前・ロゴ) のサンプル。brand.json + ロゴ
 decks/        デッキ (1 ファイルの HTML)
-examples/     sample.html (機能一覧の見本)
+maps/         マップ文書 (スライドなしで、全体から細部へたどって読む 1 ファイルの HTML。`--kind map`)
+examples/     sample.html (機能一覧の見本) / sample-map.html (マップ文書の見本)
 docs/         AI 向けガイド (authoring-guide.md / theme-guide.md)
 prompts/      依頼文テンプレート (技術解説・LT・進捗報告など。MCP のプロンプトとして登録される)
 mcp/          MCP サーバー (npx で起動。他の AI クライアントから同じ道具を使う)
@@ -37,6 +38,12 @@ tools/        serve (プレビュー) / new-deck / upgrade / pdf / gallery、lib
 - 発表モード (最初の操作で全画面) は `<div class="deck">` に `data-auto-fullscreen="true"` を付ける
 - 画像は `<img data-asset="名前">` で参照する。埋め込みは MCP の `add_asset` を使うか、ユーザーに確認する
 
+## マップ文書の形式 (`maps/<name>.html`)
+
+システム関連図などを、スライドではなく画面いっぱいの資料として読むためのファイル (目次・検索・URL・印刷付き)。
+`<meta name="jh-kind" content="map">` が付き、編集してよいのは `jh:map` (JSON) / `jh:deck-style` / `jh:deck-script` だけ。
+`jh:map` の JSON の書き方は、ガイドの「階層マップ」(`.diagram`) と同じ。確認手順も同じ (`http://localhost:4000/maps/<name>.html` で `Deck.audit()`)。
+
 ## このリポジトリでのルール
 
 1. **デッキの作業では `decks/<name>.html` の編集可能な範囲だけを変更する。** `engine/` `components/` `themes/` `docs/` `mcp/` `tools/` は共通部分なので、ユーザーが明示的に頼んだ場合だけ変更する。
@@ -59,7 +66,7 @@ tools/        serve (プレビュー) / new-deck / upgrade / pdf / gallery、lib
 
 1. プレビューサーバーを起動する: `npm run dev` → http://localhost:4000
 2. `http://localhost:4000/decks/<name>.html` を開き、ブラウザのコンソールで **`Deck.audit()`** を実行する
-   - 戻り値が空配列 `[]` なら「検査した項目では問題なし」。要素があれば `type` (overflow / clipped / overlap / contrast / asset / image / data) ごとに直す
+   - 戻り値が空配列 `[]` なら「検査した項目では問題なし」。要素があれば `type` (overflow / clipped / overlap / contrast / asset / image / data、マップ文書は density も) ごとに直す
    - 意図的なはみ出し・重なり・低コントラストは `allow-overflow` / `allow-overlap` / `allow-low-contrast` クラスで除外する
    - 検査は見た目の良し悪しまでは判定しない。必ず 3 のスクリーンショット確認と組み合わせる
 3. 各スライドを `Deck.goto(i, Infinity)` (全ステップ表示) にしてスクリーンショットで目視確認する
@@ -72,8 +79,9 @@ tools/        serve (プレビュー) / new-deck / upgrade / pdf / gallery、lib
 ```
 npm run dev                         プレビュー (http://localhost:4000、保存で自動リロード、/gallery/ でテーマギャラリー)
 npm run new -- <name> "タイトル" [--theme <テーマ>] [--brand none|header|footer|both] [--fullscreen]
-npm run upgrade [-- <name>]         デッキに最新のエンジン・テーマ・ブランドを埋め込む (旧形式のフォルダデッキも変換)
-npm run pdf -- <name>               dist/<name>.pdf に出力 (Chrome / Edge を使用)
+npm run new -- <name> "タイトル" --kind map   マップ文書を作る (maps/YYYY-MM-DD-<name>.html)
+npm run upgrade [-- <name>]         デッキ・マップ文書に最新のエンジン・テーマ・ブランドを埋め込む (旧形式のフォルダデッキも変換)
+npm run pdf -- <name>               dist/<name>.pdf に出力 (Chrome / Edge を使用。マップ文書は階層ごとに 1 ページ)
 npm run gallery                     テーマギャラリーを生成 (npm run dev 中は自動)
 npm run mcp                         MCP サーバーを起動 (ワークスペース: .workspace/)
 npm run repair -- <name>            ブラウザの「名前を付けて保存」で壊れたデッキを復旧

@@ -186,6 +186,7 @@
 .dg-crumb-sep { color: var(--muted); }
 .dg-stackback { fill: var(--surface-2); stroke: var(--border); stroke-width: 3; }
 /* 図がパンくず (上)・説明バー (下) の裏に隠れないよう、表示枠を縮める */
+.dg.is-drill { display: flow-root; } /* svg の margin-top が親に抜けないように */
 .dg.is-drill.is-inside .dg-svg { margin-top: 64px; height: calc(100% - 64px); }
 .dg.is-drill.has-caption .dg-svg { height: calc(100% - 80px); }
 .dg.is-drill.is-inside.has-caption .dg-svg { height: calc(100% - 144px); }

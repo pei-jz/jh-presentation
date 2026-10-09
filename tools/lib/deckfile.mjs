@@ -25,18 +25,18 @@ export const SAMPLE_BRAND_DIR = path.join(PKG_ROOT, 'brand');
 export const BRAND_POSITIONS = ['none', 'header', 'footer', 'both'];
 export const TRANSITIONS = ['fade', 'slide', 'zoom', 'none'];
 
-const readPkg = (...p) => fs.readFileSync(path.join(PKG_ROOT, ...p), 'utf8');
-const version = () => JSON.parse(readPkg('package.json')).version;
+export const readPkg = (...p) => fs.readFileSync(path.join(PKG_ROOT, ...p), 'utf8');
+export const version = () => JSON.parse(readPkg('package.json')).version;
 
 export function escapeHtml(s) {
   return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 }
-function unescapeHtml(s) {
+export function unescapeHtml(s) {
   return String(s).replace(/&(amp|lt|gt|quot|#39);/g, (_, e) => ({ amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'" }[e]));
 }
 /** <script> 内に埋め込むために </script を無害化 */
-const safeScript = (s) => s.replace(/<\/script/gi, '<\\/script');
-const safeJson = (o) => JSON.stringify(o).replace(/<\//g, '<\\/');
+export const safeScript = (s) => s.replace(/<\/script/gi, '<\\/script');
+export const safeJson = (o) => JSON.stringify(o).replace(/<\//g, '<\\/');
 
 // ---------------------------------------------------------------------------
 // テーマ
@@ -51,7 +51,7 @@ export function findThemeFile(name, themeDirs = []) {
   return null;
 }
 
-function themeCss(name, themeDirs) {
+export function themeCss(name, themeDirs) {
   const base = `@layer theme-base {\n${readPkg('themes', 'default.css')}\n}`;
   if (!name || name === 'default') return base;
   const f = findThemeFile(name, themeDirs);
@@ -89,7 +89,7 @@ export function loadBrand(brandDir) {
 // ---------------------------------------------------------------------------
 // 組み立て
 // ---------------------------------------------------------------------------
-const block = (name, inner) => `<!-- jh:${name} -->\n${inner}\n<!-- /jh:${name} -->`;
+export const block = (name, inner) => `<!-- jh:${name} -->\n${inner}\n<!-- /jh:${name} -->`;
 
 function engineStyle() {
   // @page は @layer の中に書けないので <head> 側に置く
@@ -182,18 +182,18 @@ ${block('deck-script', `<script>\n${safeScript((deck.js || '').trim())}\n</scrip
 // ---------------------------------------------------------------------------
 // 解析
 // ---------------------------------------------------------------------------
-function getBlock(html, name) {
+export function getBlock(html, name) {
   const m = html.match(new RegExp(`<!-- jh:${name} -->\\n?([\\s\\S]*?)\\n?<!-- /jh:${name} -->`));
   return m ? m[1] : null;
 }
-function stripTag(inner, tag) {
+export function stripTag(inner, tag) {
   if (inner == null) return '';
   return inner.replace(new RegExp(`^\\s*<${tag}[^>]*>\\n?`), '').replace(new RegExp(`\\n?</${tag}>\\s*$`), '');
 }
 const meta = (html, name) => ((html.match(new RegExp(`<meta name="${name}" content="([^"]*)"`)) || [])[1]);
 
 export function isDeckHtml(html) {
-  return /<meta name="generator" content="jh-presentation[^"]*"/.test(html);
+  return /<meta name="generator" content="jh-presentation[^"]*"/.test(html) && !/<meta name="jh-kind" content="map"/.test(html);
 }
 
 export function parseDeck(html) {
