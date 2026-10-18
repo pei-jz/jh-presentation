@@ -185,3 +185,8 @@ body.jh-map-printing .jh-map-main { display: none; }
 .jh-mapdoc .er-detail td:last-child { font-size: 12px; }
 .dg-links code { font-size: 12px; }
 .jh-print-cols { font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+.jh-mapdoc .dg-zoomui { right: 12px; bottom: 56px; gap: 4px; }
+.jh-mapdoc .dg-zoombtn { width: 34px; height: 34px; border-radius: 8px; font-size: 18px; }
+.jh-mapdoc .dg-minimap { left: 12px; bottom: 56px; width: 200px; height: 120px; border-width: 1px; }
+.jh-mapdoc .dg:has(> .dg-panel:not([hidden])) > .dg-zoomui { right: calc(min(380px, 45%) + 12px); }
+.jh-print-fig .dg-zoomui, .jh-print-fig .dg-minimap { display: none; }

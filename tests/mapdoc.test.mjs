@@ -175,3 +175,27 @@ test('エディタの iframe の中: ready (kind: map) を送り、F5 は再読�
   assert.ok(prevented, 'F5 の既定の動作 (再読み込み) を止める');
   assert.equal(got[0], 'ready:map');
 });
+
+test('閲覧の補助: ホイールで拡大するとミニマップが出て、ドラッグは箱のクリックにならない。⤢ で全体に戻る', async () => {
+  const p2 = await browser.newPage({ viewport: { width: 1440, height: 860 } });
+  await p2.goto(URL_ + '#/order.db');
+  await p2.waitForFunction(() => document.documentElement.classList.contains('map-ready'));
+  await p2.evaluate(() => window.Deck.settled(4000));
+  const width = () => p2.evaluate(() => Number(document.querySelector('.jh-map-stage .dg-svg').getAttribute('viewBox').split(' ')[2]));
+  const w0 = await width();
+  await p2.mouse.move(900, 450);
+  await p2.mouse.wheel(0, -600);
+  assert.ok((await width()) < w0 * 0.6, '拡大して見える範囲が狭くなる');
+  assert.equal(await p2.evaluate(() => document.querySelector('.dg-minimap').hidden), false);
+  const box = await p2.locator('.er-table[data-id="order.db.orders"] .er-title').boundingBox();
+  await p2.mouse.move(box.x + 10, box.y + 5);
+  await p2.mouse.down();
+  await p2.mouse.move(box.x - 150, box.y + 60, { steps: 6 });
+  await p2.mouse.up();
+  assert.equal(await p2.evaluate(() => JhMap.api.selected()), null, 'ドラッグは選択にならない');
+  await p2.click('.dg-zoombtn[title="全体を表示"]');
+  await p2.evaluate(() => window.Deck.settled(4000));
+  assert.equal(await width(), w0);
+  assert.equal(await p2.evaluate(() => document.querySelector('.dg-minimap').hidden), true);
+  await p2.close();
+});

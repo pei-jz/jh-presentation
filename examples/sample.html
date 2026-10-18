@@ -2162,6 +2162,52 @@ body.deck-print-mode {
 }
 .dg:has(> .dg-flowui) > .dg-caption { max-width: calc(100% - 480px); }
 
+/* ---- 拡大縮小・ドラッグ移動・ミニマップ (階層マップ) ---------------------------------- */
+.dg.has-panzoom .dg-svg { overflow: hidden; cursor: grab; touch-action: none; }
+.dg.has-panzoom.is-panning .dg-svg { cursor: grabbing; }
+.dg-zoomui {
+  position: absolute;
+  right: 16px;
+  bottom: 96px;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.dg-zoombtn {
+  width: 56px;
+  height: 56px;
+  border: 0;
+  border-radius: 14px;
+  font: inherit;
+  font-size: 30px;
+  line-height: 1;
+  color: var(--fg);
+  background: var(--surface);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .08);
+  cursor: pointer;
+}
+.dg-zoombtn:hover { color: var(--accent); }
+.dg-minimap {
+  position: absolute;
+  left: 16px;
+  bottom: 96px;
+  z-index: 4;
+  width: 300px;
+  height: 180px;
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .12);
+  cursor: pointer;
+  overflow: hidden;
+}
+.dg-minimap[hidden] { display: none; }
+.dg-minimap-svg { display: block; width: 100%; height: 100%; pointer-events: none; }
+.dg-minimap-view { fill: var(--accent-soft); fill-opacity: .35; stroke: var(--accent); stroke-width: 2px; vector-effect: non-scaling-stroke; }
+.dg-minimap-svg .dg-dot { display: none; }
+.deck-print-mode .dg-zoomui, .deck-print-mode .dg-minimap, .deck-thumb-slide .dg-zoomui, .deck-thumb-slide .dg-minimap { display: none !important; }
+
 }
 </style>
 <!-- /jh:engine-style -->
@@ -4113,6 +4159,7 @@ body.deck-print-mode {
   Camera.prototype.apply = function (vb) {
     this.vb = vb;
     this.svg.setAttribute('viewBox', vb.map(function (v) { return Math.round(v * 10) / 10; }).join(' '));
+    if (this.onApply) this.onApply(vb);
   };
   /** 矩形 [x, y, w, h] が収まるように移動する (表示枠の縦横比に合わせ、余白を付ける) */
   Camera.prototype.fit = function (rect, animate) {
@@ -4142,6 +4189,121 @@ body.deck-print-mode {
       self.raf = requestAnimationFrame(frame);
     }));
   };
+
+  // ------------------------------------------------------------------
+  // 拡大縮小・ドラッグ移動・ミニマップ (階層マップ)
+  //   ホイール / ピンチで拡大縮小、ドラッグで移動、右下の ＋ − ⤢ ボタン、拡大中は左下にミニマップ (クリックでその場所へ)
+  // ------------------------------------------------------------------
+  function PanZoom(container, svgEl, cam, uid) {
+    container.classList.add('has-panzoom');
+    var ui = h('div', 'dg-zoomui', container);
+    ui.addEventListener('click', function (ev) { ev.stopPropagation(); });
+    [['＋', '拡大', function () { zoomAt(null, 1 / 1.4); }], ['−', '縮小', function () { zoomAt(null, 1.4); }], ['⤢', '全体を表示', function () { cam.reset(true); }]]
+      .forEach(function (b) {
+        var el = h('button', 'dg-zoombtn', ui, b[0]);
+        el.type = 'button';
+        el.title = b[1];
+        el.setAttribute('aria-label', b[1]);
+        el.addEventListener('click', b[2]);
+      });
+
+    // ミニマップ: 今の階層の図を縮小して映し、見えている範囲を枠で示す
+    var mini = h('div', 'dg-minimap', container);
+    mini.hidden = true;
+    var msvg = s('svg', { class: 'dg-minimap-svg', preserveAspectRatio: 'xMidYMid meet' }, mini);
+    ['groups', 'edges', 'nodes'].forEach(function (k) { s('use', { href: '#' + uid + '-' + k }, msvg); });
+    var view = s('rect', { class: 'dg-minimap-view' }, msvg);
+    mini.addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      var pt = toSvg(msvg, ev.clientX, ev.clientY), vb = cam.vb;
+      cam.to(clamp([pt[0] - vb[2] / 2, pt[1] - vb[3] / 2, vb[2], vb[3]]), true);
+    });
+
+    function toSvg(svg, x, y) {
+      var m = svg.getScreenCTM();
+      if (!m) return [0, 0];
+      var p = svg.createSVGPoint();
+      p.x = x; p.y = y;
+      p = p.matrixTransform(m.inverse());
+      return [p.x, p.y];
+    }
+    /** 広さの上限・下限 (全体の 1/10 〜 2 倍) */
+    function clamp(vb) {
+      var f = cam.full, k = Math.min(Math.max(vb[2], f[2] / 10), f[2] * 2) / vb[2];
+      if (k === 1) return vb;
+      var cx = vb[0] + vb[2] / 2, cy = vb[1] + vb[3] / 2, w = vb[2] * k, hh = vb[3] * k;
+      return [cx - w / 2, cy - hh / 2, w, hh];
+    }
+    /** pt (svg の座標。null なら中央) を中心に k 倍の広さにする (k < 1 で拡大) */
+    function zoomAt(pt, k, animate) {
+      var vb = cam.vb;
+      if (!pt) pt = [vb[0] + vb[2] / 2, vb[1] + vb[3] / 2];
+      cam.to(clamp([pt[0] - (pt[0] - vb[0]) * k, pt[1] - (pt[1] - vb[1]) * k, vb[2] * k, vb[3] * k]), animate !== false);
+    }
+
+    svgEl.addEventListener('wheel', function (ev) {
+      ev.preventDefault();
+      zoomAt(toSvg(svgEl, ev.clientX, ev.clientY), Math.pow(1.0015, ev.deltaY), false);
+    }, { passive: false });
+
+    // ドラッグで移動、2 本指でピンチ。動かしたらクリック (箱を選ぶ・中へ入る) にしない
+    var pointers = {}, start = null, moved = false;
+    svgEl.addEventListener('pointerdown', function (ev) {
+      if (ev.button > 0) return;
+      pointers[ev.pointerId] = [ev.clientX, ev.clientY];
+      start = { vb: cam.vb.slice(), pts: JSON.parse(JSON.stringify(pointers)) };
+      moved = false;
+    });
+    svgEl.addEventListener('pointermove', function (ev) {
+      if (!start || !pointers[ev.pointerId]) return;
+      pointers[ev.pointerId] = [ev.clientX, ev.clientY];
+      var ids = Object.keys(pointers), m = svgEl.getScreenCTM();
+      if (!m) return;
+      var a = start.pts[ids[0]], b = pointers[ids[0]];
+      if (!a) return;
+      if (!moved && Math.hypot(b[0] - a[0], b[1] - a[1]) < 5) return;
+      if (!moved) { moved = true; try { svgEl.setPointerCapture(ev.pointerId); } catch (e) { /* なし */ } }
+      container.classList.add('is-panning');
+      var vb = start.vb.slice();
+      if (ids.length >= 2 && start.pts[ids[1]]) { // ピンチ: 2 本の指の間隔の比で拡大縮小
+        var a2 = start.pts[ids[1]], b2 = pointers[ids[1]];
+        var k = Math.hypot(a[0] - a2[0], a[1] - a2[1]) / Math.max(1, Math.hypot(b[0] - b2[0], b[1] - b2[1]));
+        var c = toSvg(svgEl, (a[0] + a2[0]) / 2, (a[1] + a2[1]) / 2);
+        vb = clamp([c[0] - (c[0] - vb[0]) * k, c[1] - (c[1] - vb[1]) * k, vb[2] * k, vb[3] * k]);
+      } else {
+        vb[0] -= (b[0] - a[0]) / m.a;
+        vb[1] -= (b[1] - a[1]) / m.d;
+      }
+      cam.to(vb, false);
+    });
+    function end(ev) {
+      delete pointers[ev.pointerId];
+      if (!Object.keys(pointers).length) { start = null; container.classList.remove('is-panning'); }
+      else start = { vb: cam.vb.slice(), pts: JSON.parse(JSON.stringify(pointers)) };
+    }
+    svgEl.addEventListener('pointerup', end);
+    svgEl.addEventListener('pointercancel', end);
+    svgEl.addEventListener('click', function (ev) {
+      if (moved) { ev.stopPropagation(); ev.preventDefault(); moved = false; }
+    }, true);
+
+    cam.onApply = function (vb) {
+      var f = cam.full;
+      var zoomed = vb[2] < f[2] * 0.97 || Math.abs(vb[0] + vb[2] / 2 - (f[0] + f[2] / 2)) > f[2] * 0.03 || Math.abs(vb[1] + vb[3] / 2 - (f[1] + f[3] / 2)) > f[3] * 0.03;
+      mini.hidden = !zoomed;
+      container.classList.toggle('is-zoomed', zoomed);
+      view.setAttribute('x', vb[0]); view.setAttribute('y', vb[1]);
+      view.setAttribute('width', vb[2]); view.setAttribute('height', vb[3]);
+    };
+    return {
+      /** 階層を描き直したとき: ミニマップの表示範囲を今の階層に合わせる */
+      refresh: function () {
+        var f = cam.full;
+        msvg.setAttribute('viewBox', f.join(' '));
+        cam.onApply(cam.vb);
+      },
+    };
+  }
 
   // ------------------------------------------------------------------
   // 詳細パネル・説明バー
@@ -4732,10 +4894,12 @@ body.deck-print-mode {
     var svgEl = s('svg', { class: 'dg-svg', preserveAspectRatio: 'xMidYMid meet', role: 'img', 'aria-label': data.title || '図' });
     container.insertBefore(svgEl, container.firstChild);
     arrowDefs(svgEl, uid);
-    var layerGroups = s('g', { class: 'dg-groups' }, svgEl);
-    var layerEdges = s('g', { class: 'dg-edges' }, svgEl);
-    var layerNodes = s('g', { class: 'dg-nodes' }, svgEl);
+    var layerGroups = s('g', { class: 'dg-groups', id: uid + '-groups' }, svgEl);
+    var layerEdges = s('g', { class: 'dg-edges', id: uid + '-edges' }, svgEl);
+    var layerNodes = s('g', { class: 'dg-nodes', id: uid + '-nodes' }, svgEl);
     var cam = new Camera(svgEl, [0, 0, 100, 100]);
+    // 拡大縮小・ドラッグ移動・ミニマップ (マップ文書では常に。スライドでは "pan": true のときだけ。スワイプでのスライド送りとぶつかるため)
+    var pz = (mapMode || data.pan) && !IS_PRINT ? PanZoom(container, svgEl, cam, uid) : null;
     var crumbs = h('nav', 'dg-crumbs', container);
     crumbs.setAttribute('aria-label', '階層');
     crumbs.addEventListener('click', function (ev) { ev.stopPropagation(); });
@@ -4800,6 +4964,7 @@ body.deck-print-mode {
       setCaption(captionText()); // ステップの説明は、ステップが指す階層にいる間だけ出す
       cam.full = lv.full.slice();
       cam.apply(lv.full.slice());
+      if (pz) pz.refresh();
       container.classList.toggle('is-inside', !!p);
       container.setAttribute('data-level', p);
       updateCrumbs();
