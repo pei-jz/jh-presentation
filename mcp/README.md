@@ -13,12 +13,13 @@ AI クライアント (Claude Desktop / Claude Code / VS Code など) から、H
 デッキは、呼び出しごとに次の順で決まる場所に保存される。出力先を変えるたびに MCP の設定を変える必要はない。
 
 1. **ツールの `dir` 引数** — 「このプロジェクトの slides に作って」のようにユーザーが場所を指定したとき (作業フォルダからの相対パスか絶対パス)
-2. **AI クライアントの作業フォルダの `decks/`** — Claude Code・VS Code など、作業フォルダを MCP の roots で伝えるクライアント
+2. **AI クライアントの作業フォルダの `decks/`** (マップ文書は `maps/`) — Claude Code・VS Code など、作業フォルダを MCP の roots で伝えるクライアント
 3. **ワークスペース** — 作業フォルダのない Claude Desktop など
 
 | 設定 | 内容 |
 |---|---|
 | `--decks-dir <名前>` / `JH_PRESENTATION_DECKS_DIR` | 作業フォルダの中のフォルダ名 (既定: `decks`) |
+| `--maps-dir <名前>` / `JH_PRESENTATION_MAPS_DIR` | マップ文書を置く作業フォルダの中のフォルダ名 (既定: `maps`) |
 | `--no-roots` / `JH_PRESENTATION_ROOTS=off` | 作業フォルダを使わず、いつもワークスペースに保存する |
 
 ## ワークスペース (設定の置き場所)
@@ -54,13 +55,14 @@ AI クライアント (Claude Desktop / Claude Code / VS Code など) から、H
 | | `preview_themes` | テーマの見本を画像で返す (AI の見比べ・自作テーマの確認用) |
 | | `get_theme_guide` / `create_theme` | テーマ作成ガイド / 自作テーマの保存 |
 | テンプレート | `list_templates` | 依頼文テンプレートの一覧と本文 |
-| デッキ | `list_decks` / `read_deck` | 一覧・内容の読み込み |
+| デッキ | `list_decks` / `read_deck` | 一覧 (マップ文書も `maps` に出る)・内容の読み込み |
 | | `create_deck` / `write_deck` / `replace_slide` | 作成・書き込み・1 枚だけ差し替え (テーマ・ブランド位置も指定可)。書き込みのたびに `audit_deck` と同じ検査を行い、結果を `audit` に返す。`get_guide` を読む前に `create_deck` を呼ぶと、戻り値にガイドを添える |
 | | `add_asset` | 画像・動画をデッキに埋め込む (`<img data-asset="名前">` で参照) |
 | | `upgrade_deck` | 埋め込まれたエンジン・テーマ・ブランドを最新にする (書き込みでは変わらない。明示的に実行したときだけ) |
 | | `list_history` / `restore_history` | 保存履歴 (書き込み前の版を最大 20 件) / 前の版に戻す |
+| マップ文書 | `create_map` / `read_map` / `write_map` | スライドなしで、システム関連図などを全体から細部へたどって読む資料 (目次・検索・URL・階層ごとの印刷付き)。中身は JSON (ガイドの「階層マップ」と同じ書き方)。書き込みのたびに検査し、結果を `audit` に返す。検査・撮影・履歴・最新化・表示・PDF はデッキと同じ道具を使う |
 | 確認 | `audit_deck` | はみ出し・切れ・文字の重なり・コントラスト・画像の欠落・小さすぎる文字・JS エラー/警告・外部通信を検出 (ok は「検査した項目で問題なし」) |
-| | `screenshot_deck` | スライドを画像にして AI に返す (AI が見て直せる) |
+| | `screenshot_deck` | スライドを画像にして AI に返す (AI が見て直せる)。マップ文書は階層ごと (`levels`)、部品を選んだ状態 (`select`) |
 | 出力 | `open_deck` / `export_deck` | ブラウザで開く (ローカルサーバー経由。E キーで文字を直して Ctrl+S で元のファイルに直接保存できる。`fullscreen: true` で全画面のアプリウィンドウで起動) / PDF に出力 |
 | 復旧 | `repair_deck` | ブラウザの「名前を付けて保存」で壊れたデッキを元に戻す (`list_decks` で broken と出るもの) |
 

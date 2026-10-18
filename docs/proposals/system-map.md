@@ -1,7 +1,8 @@
 # 仕様案: 階層マップ (システム関連図・状態遷移図・ER 図) とマップ文書
 
 状態: **段階 1〜3 を実装済み** (階層マップ / データの流れ `flows` / マップ文書 `maps/`) / 2026-10-09
-未実装: マップ文書の MCP 対応 (read/write/audit を jh-kind で切り替え)、ミニマップ、図の拡大縮小・ドラッグ移動、`copy_map_part`
+MCP: `create_map` / `read_map` / `write_map` を追加し、`list_decks` / `audit_deck` / `screenshot_deck` / `open_deck` / `export_deck` / 履歴 / `upgrade_deck` はマップ文書にも使える。
+未実装: ミニマップ、図の拡大縮小・ドラッグ移動、1 階層だけの読み書き (`read_map_level` / `write_map_level`)、`copy_map_part`
 
 ## 0. 目的と背景
 

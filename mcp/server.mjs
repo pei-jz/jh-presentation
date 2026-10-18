@@ -9,6 +9,7 @@
 // デッキは 1 ファイルで完結する HTML。保存先は呼び出しごとに次の順で決める:
 //   1. ツールの dir 引数
 //   2. AI クライアントの作業フォルダ (MCP の roots) の decks/   (--decks-dir / JH_PRESENTATION_DECKS_DIR で名前を変更、
+//      マップ文書は maps/ (--maps-dir / JH_PRESENTATION_MAPS_DIR)。
 //      --no-roots / JH_PRESENTATION_ROOTS=off で使わない)
 //   3. ワークスペース (--workspace。作業フォルダのない Claude Desktop など)
 // ブランド・自作テーマ・依頼文テンプレートはワークスペースに置き、どのプロジェクトからも共通で使う
@@ -26,14 +27,16 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import {
   PKG_ROOT, resolveWorkspace, ensureWorkspace, ctxFor, listDecks, createDeck, readDeck, writeDeck,
   replaceSlide, addAsset, listHistory, restoreHistory, saveDeckFile, isBrowserSaved, deckFile, listThemes, assertTheme, saveTheme, readGuide, readThemeGuide,
-  brandDir, themesDir, promptsDir, deckPlace, placeOf,
+  brandDir, themesDir, promptsDir, deckPlace, placeOf, listMaps, createMap, readMap, writeMap, readDoc,
 } from './workspace.mjs';
 import { loadPromptTemplates, renderPrompt } from './prompts.mjs';
 import { buildGallery } from '../tools/lib/gallery.mjs';
 import { loadBrand, buildDeck, BRAND_POSITIONS, TRANSITIONS } from '../tools/lib/deckfile.mjs';
 import { createSaveToken, injectSaveConfig, handleSave } from '../tools/lib/save-endpoint.mjs';
 import { launchFullscreen } from '../tools/lib/browser.mjs';
-import { auditDeck, summarizeAudit, screenshotDeck, exportPdf, extractFromSavedPage, closeBrowser } from './render.mjs';
+import {
+  auditDeck, summarizeAudit, screenshotDeck, exportPdf, extractFromSavedPage, closeBrowser, auditMap, screenshotMap, exportMapPdf,
+} from './render.mjs';
 
 const pkg = JSON.parse(fs.readFileSync(path.join(PKG_ROOT, 'package.json'), 'utf8'));
 const WS = resolveWorkspace();
@@ -49,6 +52,7 @@ function option(name, envName) {
   return process.env[envName];
 }
 const DECKS_SUBDIR = option('decks-dir', 'JH_PRESENTATION_DECKS_DIR') || 'decks';
+const MAPS_SUBDIR = option('maps-dir', 'JH_PRESENTATION_MAPS_DIR') || 'maps';
 const USE_ROOTS = !process.argv.includes('--no-roots') && !/^(off|false|0|no)$/i.test(process.env.JH_PRESENTATION_ROOTS || '');
 const GALLERY_DIR = path.join(os.tmpdir(), 'jh-presentation-gallery');
 
@@ -78,6 +82,19 @@ const MCP_WORKFLOW = `
 - 失敗したら list_history / restore_history で前の版に戻せる。
 - list_decks で broken と出たデッキ (ブラウザの「名前を付けて保存」で壊れたもの) は repair_deck で復旧する。
 - ユーザーには「文字の修正は E キー → Ctrl+S で保存。ブラウザの『名前を付けて保存』は使わない」と伝える。
+
+## マップ文書 (スライドなしで読む資料) の作業手順
+
+大きなシステムの説明書・設計書・システム関連図を「全体から細部へたどって読む資料」にしたいときは、スライドではなくマップ文書を作る
+(ユーザーが「マップ」「システムマップ」「スライドでなく資料で」「全体から細部へ」などと言ったとき。発表するならデッキ)。
+
+1. create_map で作る (書き方の見本を兼ねた最初のマップが入る)。保存先は作業フォルダの maps/、なければ既定のワークスペース。
+2. write_map の map にマップのデータ (JSON) を渡す。書き方はガイドの「階層マップ」(.diagram) と同じ
+   (nodes の children で入れ子、edges は一番細かい部品同士で 1 回だけ、flows でデータの流れ、detail に説明の HTML、tags で検索語)。steps は使わない。
+3. write_map の戻り値の audit を見る。data (存在しない id・流れの途切れ)・density (1 階層のノードが 12 個超)・overlap を直して書き込み直す。
+4. screenshot_deck で階層ごとの見た目を確認する (levels にノード id。'' は全体。select で部品を選んだ状態)。
+5. open_deck でユーザーのブラウザに表示する。PDF (export_deck) は階層ごとに 1 ページ。
+- 既存のマップの修正は read_map で読んでから。履歴・最新化・PDF・表示はデッキと同じ道具 (list_history / restore_history / upgrade_deck / export_deck / open_deck) を使う。
 `;
 
 const server = new McpServer(
@@ -88,7 +105,8 @@ const server = new McpServer(
       'プレゼン資料やスライドの作成を頼まれたら、自分で HTML を書かずにこのサーバーの道具を使う。デッキは 1 ファイルの HTML として保存される。' +
       'スライドを作る前に必ず get_guide を呼び、ガイドの部品とルールに従って書くこと (図・比較・数値は部品を使い、箱や矢印を自作しない)。' +
       'write_deck / replace_slide の戻り値に自動検査の結果 (audit) が入るので、問題があれば直してから、ユーザーに完了を伝える。' +
-      'PDF はユーザーが求めたときだけ作る。',
+      'PDF はユーザーが求めたときだけ作る。' +
+      'スライドではなく、大きなシステムの関連図を全体から細部へたどって読む資料 (マップ文書) は create_map / write_map で作る。',
   },
 );
 
@@ -143,6 +161,29 @@ async function placeFor(dir) {
   return WS;
 }
 
+/** マップ文書の保存先。dir 引数 → 作業フォルダの maps/ → ワークスペース の順 */
+async function mapPlaceFor(dir) {
+  if (dir) return placeFor(dir);
+  const root = await clientRoot();
+  if (root) return deckPlace({ dir: path.join(root, MAPS_SUBDIR), settings: WS, project: root });
+  return WS;
+}
+
+/** デッキかマップ文書を名前で探す (デッキの場所 → マップの場所)。@returns {{ P, doc }} */
+async function findDoc(dir, name) {
+  const places = [await placeFor(dir)];
+  if (!dir) places.push(await mapPlaceFor());
+  for (const P of places) {
+    if (fs.existsSync(deckFile(P, name))) return { P, doc: readDoc(P, name) };
+  }
+  throw new Error(`デッキ・マップ文書が見つかりません: ${name} (list_decks で一覧を確認してください)`);
+}
+
+function mapInfo(m) {
+  return { kind: 'map', name: m.name, title: m.title, theme: m.theme, brand: m.brand, nodeCount: m.nodeCount, file: m.file, url: pathToFileURL(m.file).href };
+}
+const docInfo = (d) => (d.kind === 'map' ? mapInfo(d) : deckInfo(d));
+
 function deckInfo(d) {
   return {
     name: d.name, title: d.title, theme: d.theme, brand: d.brand, transition: d.transition, autoFullscreen: d.autoFullscreen,
@@ -158,6 +199,8 @@ function openInBrowser(target) {
 }
 
 const deckName = z.string().describe('デッキ名 (list_decks / create_deck が返す name。.html は不要)');
+const docName = z.string().describe('デッキかマップ文書の名前 (list_decks が返す name。.html は不要)');
+const mapName = z.string().describe('マップ文書の名前 (list_decks の maps / create_map が返す name。.html は不要)');
 const dirSchema = z.string().optional().describe(
   'デッキのフォルダ (省略時: AI クライアントの作業フォルダの decks/、作業フォルダがなければ既定のワークスペース)。' +
   '作業フォルダからの相対パスか絶対パス。ユーザーが保存先を指定したときだけ渡す');
@@ -312,12 +355,13 @@ tool('list_templates', {
 // ---------------------------------------------------------------------------
 tool('list_decks', {
   title: 'デッキ一覧',
-  description: '作成済みのプレゼンテーション資料 (スライド・デッキ) の一覧 (新しい順)。保存先のフォルダも返す。',
+  description: '作成済みのプレゼンテーション資料 (スライド・デッキ) とマップ文書の一覧 (新しい順)。保存先のフォルダも返す。',
   inputSchema: { dir: dirSchema },
   annotations: { readOnlyHint: true },
 }, async ({ dir }) => {
   const P = await placeFor(dir);
-  const result = { folder: placeOf(P).dir, settings: WS, decks: listDecks(P) };
+  const M = dir ? P : await mapPlaceFor();
+  const result = { folder: placeOf(P).dir, settings: WS, decks: listDecks(P), mapsFolder: placeOf(M).dir, maps: listMaps(M) };
   if (setup.migrated.length) result.migrated = `旧形式から 1 ファイル形式に変換したデッキ: ${setup.migrated.join(', ')}`;
   if (setup.legacy.length) {
     result.legacyFolders = `旧形式のフォルダが残っています (${setup.legacy.join(', ')})。変換済みなので、ユーザーが不要なら削除してよい`;
@@ -359,7 +403,8 @@ tool('read_deck', {
   inputSchema: { name: deckName, dir: dirSchema },
   annotations: { readOnlyHint: true },
 }, async ({ name, dir }) => {
-  const d = readDeck(await placeFor(dir), name);
+  const { doc: d } = await findDoc(dir, name);
+  if (d.kind === 'map') throw new Error(`${name} はマップ文書です。read_map / write_map を使ってください`);
   return {
     content: [
       text({ ...deckInfo(d), revision: d.revision, assets: d.assetNames, engineVersion: d.version, latestVersion: pkg.version }),
@@ -443,33 +488,126 @@ tool('add_asset', {
   return { content: [text({ asset: key, usage: `<img data-asset="${key}" alt="">` })] };
 });
 
+// ---------------------------------------------------------------------------
+// マップ文書の作成・読み書き
+// ---------------------------------------------------------------------------
+const mapSchema = z.union([z.string(), z.record(z.string(), z.any())]).describe(
+  'マップのデータ (JSON のオブジェクトか文字列)。書き方はガイドの「階層マップ」と同じ: ' +
+  '{ title, direction, nodes: [{ id, label, sub, kind, accent, detail (HTML), tags, children: { nodes, edges } }], ' +
+  'edges: [{ from, to, label, data: [...], type: "async" }], flows: [{ id, label, note, path: [id | { id, note }] }] }');
+
+async function autoAuditMap(file) {
+  try {
+    return summarizeAudit(await auditMap(file));
+  } catch (e) {
+    console.error('[auto-audit]', e);
+    return { skipped: `自動検査を実行できませんでした: ${e.message || e}` };
+  }
+}
+const AFTER_WRITE_MAP = 'audit が ok: false なら issues (data / density / overlap など) を直して書き込み直す。ok: true なら screenshot_deck で階層ごとの見た目を確認する (画像を見られる場合)';
+
+tool('create_map', {
+  title: 'マップ文書を作成',
+  description:
+    'マップ文書を新しく作る: スライドではなく、大きなシステムの関連図・説明書を「全体 → 細部」とたどって読む 1 ファイルの HTML 資料 ' +
+    '(目次・検索・データでの絞り込み・URL での共有・階層ごとの印刷付き)。名前は YYYY-MM-DD-<name>。' +
+    'map を省略すると、書き方の見本を兼ねた最初のマップが入るので、続けて write_map で中身を書く。',
+  inputSchema: {
+    name: z.string().regex(/^[\w.-]+$/).describe('英数字・ハイフンの短い名前 (例: order-system)'),
+    title: z.string().describe('資料のタイトル (日本語可)'),
+    theme: z.string().optional().describe('テーマ名 (既定: default)。一覧は list_themes'),
+    brand: brandSchema.optional(),
+    map: mapSchema.optional(),
+    dir: dirSchema,
+  },
+}, async ({ name, title, theme, brand, map, dir }) => {
+  const P = await mapPlaceFor(dir);
+  const { name: created } = createMap(P, { name, title, theme, brand, map });
+  const m = readMap(P, created);
+  const content = [text({ created: mapInfo(m), next: 'write_map でマップのデータを書いてください (書き方はガイドの「階層マップ」)' })];
+  if (!guideSent) {
+    content.push(text('まだガイド (get_guide) を読んでいないので、ここに添付します。マップのデータは「階層マップ」の書き方に従ってください。\n\n' + guideText()));
+  }
+  return { content };
+});
+
+tool('read_map', {
+  title: 'マップ文書を読む',
+  description:
+    'マップ文書の編集可能な部分 (マップのデータ (JSON)・専用 CSS / JS・設定) と revision を返す。修正前に必ず読むこと。' +
+    'write_map に revision を渡すと、読んだ後に他で変更されていた場合に上書きを防げる。',
+  inputSchema: { name: mapName, dir: dirSchema },
+  annotations: { readOnlyHint: true },
+}, async ({ name, dir }) => {
+  const { doc: m } = await findDoc(dir, name);
+  if (m.kind !== 'map') throw new Error(`${name} はデッキです (read_deck を使ってください)`);
+  return {
+    content: [
+      text({ ...mapInfo(m), revision: m.revision, engineVersion: m.version, latestVersion: pkg.version }),
+      text('=== map ===\n' + m.mapText),
+      text('=== css ===\n' + m.css),
+      text('=== js ===\n' + m.js),
+    ],
+  };
+});
+
+tool('write_map', {
+  title: 'マップ文書を書き込む',
+  description:
+    'マップ文書のデータを書き込む。指定した項目だけ置き換え、省略した項目はそのまま残る。map は全体を渡す (一部だけの差分は不可)。' +
+    '埋め込まれたビューア・テーマ・ブランドは変わらない (最新化は upgrade_deck)。保存前の内容は履歴に残る (list_history / restore_history)。' +
+    '書き込み後に自動で検査し、結果を audit に返す (ok: false なら issues を直して書き込み直す)。',
+  inputSchema: {
+    name: mapName,
+    map: mapSchema.optional(),
+    css: z.string().optional().describe('専用 CSS の全内容'),
+    js: z.string().optional().describe('専用 JS の全内容'),
+    title: z.string().optional().describe('タイトル'),
+    theme: z.string().optional().describe('テーマ名'),
+    brand: brandSchema.optional(),
+    revision: revisionSchema,
+    dir: dirSchema,
+  },
+}, async ({ name, revision, dir, ...fields }) => {
+  const { P } = await findDoc(dir, name);
+  const m = writeMap(P, name, fields, { revision });
+  return { content: [text({ saved: mapInfo(m), revision: m.revision, audit: await autoAuditMap(m.file), next: AFTER_WRITE_MAP })] };
+});
+
 tool('upgrade_deck', {
   title: 'デッキを最新版に更新',
   description:
-    'デッキに埋め込まれたエンジン・テーマ・ブランド設定を最新にする (スライドの内容は変わらないが、見た目が変わる場合がある)。' +
-    'ユーザーが最新化を求めたとき、またはブランド設定 (brand.json) を変えたときだけ使う。name 省略時は全デッキ。',
-  inputSchema: { name: deckName.optional(), dir: dirSchema },
+    'デッキ・マップ文書に埋め込まれたエンジン・テーマ・ブランド設定を最新にする (内容は変わらないが、見た目が変わる場合がある)。' +
+    'ユーザーが最新化を求めたとき、またはブランド設定 (brand.json) を変えたときだけ使う。name 省略時は全デッキ・全マップ文書。',
+  inputSchema: { name: docName.optional(), dir: dirSchema },
 }, async ({ name, dir }) => {
-  const P = await placeFor(dir);
-  const names = name ? [name] : listDecks(P).map((d) => d.name);
-  names.forEach((n) => writeDeck(P, n, {}, { upgrade: true }));
-  return { content: [text({ upgraded: names, version: pkg.version, next: 'audit_deck と screenshot_deck で見た目を確認してください' })] };
+  const targets = [];
+  if (name) {
+    const { P, doc } = await findDoc(dir, name);
+    targets.push({ P, name: doc.name, kind: doc.kind });
+  } else {
+    const P = await placeFor(dir), M = dir ? P : await mapPlaceFor();
+    listDecks(P).forEach((d) => targets.push({ P, name: d.name }));
+    listMaps(M).forEach((m) => targets.push({ P: M, name: m.name, kind: 'map' }));
+  }
+  targets.forEach((t) => (t.kind === 'map' ? writeMap : writeDeck)(t.P, t.name, {}, { upgrade: true }));
+  return { content: [text({ upgraded: targets.map((t) => t.name), version: pkg.version, next: 'audit_deck と screenshot_deck で見た目を確認してください' })] };
 });
 
 tool('list_history', {
   title: '保存履歴',
-  description: 'デッキの保存履歴 (書き込み前の版。新しい順、最大 20 件)。',
-  inputSchema: { name: deckName, dir: dirSchema },
+  description: 'デッキ・マップ文書の保存履歴 (書き込み前の版。新しい順、最大 20 件)。',
+  inputSchema: { name: docName, dir: dirSchema },
   annotations: { readOnlyHint: true },
-}, async ({ name, dir }) => ({ content: [text({ history: listHistory(await placeFor(dir), name) })] }));
+}, async ({ name, dir }) => ({ content: [text({ history: listHistory((await findDoc(dir, name)).P, name) })] }));
 
 tool('restore_history', {
   title: '履歴の版に戻す',
-  description: '保存履歴の版にデッキを戻す (戻す前の内容も履歴に残るので、やり直しできる)。',
-  inputSchema: { name: deckName, id: z.string().describe('list_history の id'), dir: dirSchema },
+  description: '保存履歴の版にデッキ・マップ文書を戻す (戻す前の内容も履歴に残るので、やり直しできる)。',
+  inputSchema: { name: docName, id: z.string().describe('list_history の id'), dir: dirSchema },
 }, async ({ name, id, dir }) => {
-  const d = restoreHistory(await placeFor(dir), name, id);
-  return { content: [text({ restored: deckInfo(d), revision: d.revision })] };
+  const d = restoreHistory((await findDoc(dir, name)).P, name, id);
+  return { content: [text({ restored: docInfo(d), revision: d.revision })] };
 });
 
 // ---------------------------------------------------------------------------
@@ -483,11 +621,13 @@ tool('audit_deck', {
     'エンジンの警告 (warnings)、外部への通信 (externalRequests。オフラインで動かなくなるので不可)。' +
     'ok: true は「検査した項目で問題が見つからなかった」という意味で、見た目の良し悪しは screenshot_deck で確認すること。' +
     '意図的な重なり・はみ出しは .allow-overlap / .allow-overflow で除外できる。' +
-    'write_deck / replace_slide は書き込み後に同じ検査を自動で行うので、これは書き込まずに検査し直したいときに使う。',
-  inputSchema: { name: deckName, dir: dirSchema },
+    'write_deck / replace_slide は書き込み後に同じ検査を自動で行うので、これは書き込まずに検査し直したいときに使う。' +
+    'マップ文書も検査できる (データの誤り data・1 階層のノード数 density・全階層の文字の重なり overlap・JS エラーなど)。',
+  inputSchema: { name: docName, dir: dirSchema },
   annotations: { readOnlyHint: true },
 }, async ({ name, dir }) => {
-  const r = await auditDeck(readDeck(await placeFor(dir), name).file);
+  const { doc } = await findDoc(dir, name);
+  const r = doc.kind === 'map' ? await auditMap(doc.file) : await auditDeck(doc.file);
   return { content: [text(r)] };
 });
 
@@ -495,17 +635,32 @@ tool('screenshot_deck', {
   title: 'スライドを撮影',
   description:
     'プレゼンテーション資料のスライドの見た目を画像で返す。slides 省略時は全スライド (枚数が多い場合は数枚ずつ指定するとよい)。' +
-    'step 省略時は全ステップ表示・アニメーション完了後の最終状態。数値を指定するとそのステップ数まで表示した状態。',
+    'step 省略時は全ステップ表示・アニメーション完了後の最終状態。数値を指定するとそのステップ数まで表示した状態。' +
+    'マップ文書は階層ごとに撮る (levels にノード id の配列。\'\' は全体。省略時は全階層 (最大 12)。select でその部品を選んで詳細パネルを開いた状態)。',
   inputSchema: {
-    name: deckName,
+    name: docName,
     slides: z.array(z.number().int().min(1)).max(12).optional().describe('スライド番号 (1 始まり) の配列。最大 12 枚'),
     step: z.number().int().min(0).optional().describe('表示するステップ数 (省略時は最終状態)'),
-    scale: z.number().min(0.2).max(1).optional().describe('画像の縮尺 (既定 0.5 = 960x540)'),
+    levels: z.array(z.string()).max(12).optional().describe('マップ文書: 撮る階層 (中身のあるノードの id。\'\' は全体)'),
+    select: z.string().optional().describe('マップ文書: 選んで詳細パネルを開く部品の id'),
+    scale: z.number().min(0.2).max(1).optional().describe('画像の縮尺 (既定: デッキ 0.5 = 960x540、マップ文書 0.75 = 960x600)'),
     dir: dirSchema,
   },
   annotations: { readOnlyHint: true },
-}, async ({ name, slides, step, scale, dir }) => {
-  const r = await screenshotDeck(readDeck(await placeFor(dir), name).file, { slides, step: step == null ? 'final' : step, scale: scale || 0.5 });
+}, async ({ name, slides, step, levels, select, scale, dir }) => {
+  const { doc } = await findDoc(dir, name);
+  if (doc.kind === 'map') {
+    const r = await screenshotMap(doc.file, { levels, select, scale: scale || 0.75 });
+    const content = [];
+    for (const img of r.images) {
+      content.push(text(img.label));
+      content.push({ type: 'image', data: img.data, mimeType: 'image/jpeg' });
+    }
+    if (r.errors.length) content.push(text({ errors: r.errors }));
+    if (!r.images.length) content.push(text({ message: '撮影対象がありません', levels: r.levels }));
+    return { content };
+  }
+  const r = await screenshotDeck(doc.file, { slides, step: step == null ? 'final' : step, scale: scale || 0.5 });
   const content = [];
   for (const img of r.images) {
     content.push(text(`スライド ${img.slide} / ${r.total}`));
@@ -567,14 +722,16 @@ tool('open_deck', {
   description:
     'ユーザーの既定のブラウザでプレゼンテーション資料 (スライド・デッキ) を開く (発表・確認用。完成したら開いて見せる)。ローカルサーバー経由で開くので、' +
     'ユーザーは E キーで文字を直して Ctrl+S で元のファイルに直接保存できる。' +
-    'fullscreen: true にすると Chrome / Edge を全画面 (タブ・アドレスバーなし) で起動する。ユーザーが「発表する」「全画面で開いて」と言ったときに使う。',
+    'fullscreen: true にすると Chrome / Edge を全画面 (タブ・アドレスバーなし) で起動する。ユーザーが「発表する」「全画面で開いて」と言ったときに使う。' +
+    'マップ文書も開ける (level にノード id を渡すと、その階層を開く)。',
   inputSchema: {
-    name: deckName,
+    name: docName,
+    level: z.string().optional().describe('マップ文書: 開く階層・部品のノード id'),
     fullscreen: z.boolean().optional().describe('全画面の専用ウィンドウで開く (発表用。F11 / Esc で解除)'),
     dir: dirSchema,
   },
-}, async ({ name, fullscreen, dir }) => {
-  const d = readDeck(await placeFor(dir), name);
+}, async ({ name, fullscreen, level, dir }) => {
+  const { doc: d } = await findDoc(dir, name);
   let url;
   try {
     const { port } = await ensureDeckServer();
@@ -583,6 +740,7 @@ tool('open_deck', {
     console.error('[open_deck] ローカル配信を開始できないため file:// で開きます', e);
     url = pathToFileURL(d.file).href;
   }
+  if (d.kind === 'map' && level) url += '#/' + encodeURIComponent(level);
   let mode = 'browser';
   if (fullscreen && launchFullscreen(url)) mode = 'fullscreen';
   else openInBrowser(url);
@@ -591,7 +749,9 @@ tool('open_deck', {
       opened: url,
       mode,
       note: fullscreen && mode !== 'fullscreen' ? 'Chrome / Edge が見つからないため通常のブラウザで開きました。F キーで全画面にできます' : undefined,
-      tips: '? キーで操作一覧、S で発表者ビュー、F で全画面 (F11 / Esc で解除)、E か枠のダブルクリックで文字を編集して Ctrl+S で保存 (ブラウザの「名前を付けて保存」は使わない)',
+      tips: d.kind === 'map'
+        ? '左の目次・上の検索で部品へ移る。箱のクリックで中へ、パンくず・Esc で上へ。URL を渡すと同じ場所が開く'
+        : '? キーで操作一覧、S で発表者ビュー、F で全画面 (F11 / Esc で解除)、E か枠のダブルクリックで文字を編集して Ctrl+S で保存 (ブラウザの「名前を付けて保存」は使わない)',
     })],
   };
 });
@@ -618,12 +778,14 @@ tool('export_deck', {
   title: 'PDF に出力',
   description:
     'デッキを 16:9 の PDF に出力する (アニメーションなし、全ステップ表示)。ユーザーが PDF を求めたときだけ使う' +
-    ' (HTML のデッキファイル自体がそのまま配布・発表できるので、頼まれていなければ作らない)。',
-  inputSchema: { name: deckName, dir: dirSchema },
+    ' (HTML のデッキファイル自体がそのまま配布・発表できるので、頼まれていなければ作らない)。' +
+    'マップ文書は階層ごとに 1 ページ (図 + その階層の部品の説明。A4 横)。',
+  inputSchema: { name: docName, dir: dirSchema },
 }, async ({ name, dir }) => {
-  const d = readDeck(await placeFor(dir), name);
+  const { doc: d } = await findDoc(dir, name);
   const out = d.file.replace(/\.html$/i, '.pdf');
-  await exportPdf(d.file, out);
+  if (d.kind === 'map') await exportMapPdf(d.file, out);
+  else await exportPdf(d.file, out);
   return { content: [text({ exported: out, html: d.file })] };
 });
 

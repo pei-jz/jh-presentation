@@ -130,3 +130,31 @@ export function rebuildMap(html, fields = {}, ctx = {}, { upgrade = false } = {}
     brand: raw('brand'),
   });
 }
+
+/** 書き方の見本を兼ねた最初のマップ (全体 → システムの中 → 機能、データの流れ 1 本) */
+export function starterMap(title) {
+  return {
+    title,
+    nodes: [
+      { id: 'user', label: '利用者', kind: 'user' },
+      { id: 'web', label: '画面', sub: 'Web / アプリ', detail: '<p>利用者が操作する画面。</p>' },
+      { id: 'core', label: '業務システム', accent: true, detail: '<p>このシステムの説明を書く。</p>',
+        children: { nodes: [
+          { id: 'core.api', label: 'API', detail: '<p>画面からの要求を受け付ける。</p>' },
+          { id: 'core.logic', label: '業務ロジック' },
+          { id: 'core.db', label: '業務 DB', kind: 'db' },
+        ] } },
+      { id: 'ext', label: '外部サービス', kind: 'ext' },
+    ],
+    edges: [
+      { from: 'user', to: 'web' },
+      { from: 'web', to: 'core.api', label: '要求', data: ['申請'] },
+      { from: 'core.api', to: 'core.logic' },
+      { from: 'core.logic', to: 'core.db', label: '保存', data: ['申請'] },
+      { from: 'core.logic', to: 'ext', label: '連携', type: 'async' },
+    ],
+    flows: [
+      { id: 'main', label: '申請の流れ', path: ['user', 'web', 'core.api', 'core.logic', { id: 'core.db', note: '申請を保存' }] },
+    ],
+  };
+}

@@ -45,7 +45,7 @@ export async function closeBrowser() {
 async function withPage(options, fn) {
   const browser = await getBrowser();
   const context = await browser.newContext({
-    viewport: { width: W, height: H },
+    viewport: options.viewport || { width: W, height: H },
     deviceScaleFactor: options.scale || 1,
     reducedMotion: options.reducedMotion ? 'reduce' : 'no-preference',
   });
@@ -147,7 +147,7 @@ export async function auditDeck(deckFile) {
   });
 }
 
-const AUDIT_KEYS = ['overflow', 'overlap', 'contrast', 'images', 'data', 'smallText', 'errors', 'warnings', 'externalRequests'];
+const AUDIT_KEYS = ['overflow', 'overlap', 'contrast', 'images', 'data', 'density', 'smallText', 'errors', 'warnings', 'externalRequests'];
 
 /**
  * auditDeck の結果を、書き込みの戻り値に添える短い形にする (問題がなければ 1 行、あれば種類ごとに最大 10 件)
@@ -287,6 +287,81 @@ export function isBrowserSavedPage(html) {
 export async function exportPdf(deckFile, outFile) {
   return withPage({}, async (page) => {
     await load(page, deckUrl(deckFile, '?print'));
+    fs.mkdirSync(path.dirname(outFile), { recursive: true });
+    await page.pdf({ path: outFile, preferCSSPageSize: true, printBackground: true });
+    return outFile;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// マップ文書 (スライドのエンジンではなく components/mapdoc.js で動く)
+// ---------------------------------------------------------------------------
+const MAP_VIEWPORT = { width: 1280, height: 800 };
+
+async function loadMap(page, url) {
+  await page.goto(url, { waitUntil: 'load' });
+  await page.waitForFunction(() => document.documentElement.classList.contains('map-ready'), null, { timeout: 10_000 });
+  // 撮影・検査は描き直しのフェードやパネルの出現の途中を写さないよう、CSS の動きを止める (流れの点は SVG のアニメーションなので動く)
+  await page.addStyleTag({ content: '*, *::before, *::after { animation: none !important; transition: none !important; }' });
+}
+
+/**
+ * マップ文書の検査: データの誤り (data)・1 階層のノード数 (density)・全階層の文字の重なり (overlap)、
+ * JS エラー・警告・外部への通信。返す形は auditDeck にそろえる (summarizeAudit で要約できる)
+ */
+export async function auditMap(mapFile) {
+  return withPage({ reducedMotion: true, viewport: MAP_VIEWPORT }, async (page, log) => {
+    await loadMap(page, deckUrl(mapFile));
+    const issues = await page.evaluate(() => window.Deck.audit());
+    const levels = await page.evaluate(() => window.JhMap.api.levels().map((p) => ({ id: p, path: window.JhMap.api.path(p).join(' › ') })));
+    const pick = (t) => issues.filter((x) => x.type === t);
+    const result = {
+      kind: 'map',
+      levels,
+      overflow: [], contrast: [], images: [], smallText: [],
+      overlap: pick('overlap'),
+      data: pick('data'),
+      density: pick('density'),
+    };
+    const warnings = log.warnings.filter((w) => w.startsWith('[deck]'));
+    const found = result.overlap.length + result.data.length + result.density.length + log.errors.length + warnings.length + log.external.length;
+    return { ok: found === 0, ...result, errors: log.errors, warnings, externalRequests: log.external };
+  });
+}
+
+/**
+ * マップ文書の階層ごとの見た目を撮影する。levels はノード id の配列 ('' は全体)。省略時は全階層 (最大 12)。
+ * select を渡すと、その部品を選んで詳細パネルを開いた状態を撮る (levels は無視)
+ */
+export async function screenshotMap(mapFile, { levels, select, scale = 0.75, quality = 75 } = {}) {
+  // マップ文書は画面向けの文字の大きさなので、ノート PC 程度の画面で撮る (scale 0.75 で 960x600)
+  return withPage({ scale, reducedMotion: true, viewport: MAP_VIEWPORT }, async (page, log) => {
+    await loadMap(page, deckUrl(mapFile));
+    const all = await page.evaluate(() => window.JhMap.api.levels());
+    const images = [];
+    const shot = async (label) => {
+      const buf = await page.screenshot({ type: 'jpeg', quality });
+      images.push({ label, data: buf.toString('base64') });
+    };
+    if (select) {
+      await page.evaluate(async (id) => { window.JhMap.api.reveal(id); await window.Deck.settled(4000); }, String(select));
+      await shot(await page.evaluate((id) => window.JhMap.api.path(id).join(' › '), String(select)));
+    } else {
+      const targets = (levels && levels.length ? levels.map(String) : all).filter((p) => all.includes(p)).slice(0, 12);
+      for (const p of targets) {
+        await page.evaluate((id) => window.JhMap.api.drawLevel(id), p);
+        await page.waitForTimeout(80);
+        await shot(await page.evaluate((id) => window.JhMap.api.path(id).join(' › '), p));
+      }
+    }
+    return { levels: all, images, errors: log.errors };
+  });
+}
+
+/** マップ文書の PDF: ?print の表示 (階層ごとに 1 ページ、A4 横) をそのまま出す */
+export async function exportMapPdf(mapFile, outFile) {
+  return withPage({}, async (page) => {
+    await loadMap(page, deckUrl(mapFile, '?print'));
     fs.mkdirSync(path.dirname(outFile), { recursive: true });
     await page.pdf({ path: outFile, preferCSSPageSize: true, printBackground: true });
     return outFile;

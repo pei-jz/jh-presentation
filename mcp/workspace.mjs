@@ -18,6 +18,7 @@ import {
   PKG_ROOT, BUILTIN_THEMES_DIR, SAMPLE_BRAND_DIR, buildDeck, parseDeck, rebuildDeck, isDeckHtml,
   loadBrand, migrateFolderDecks, fileToDataUri, findThemeFile,
 } from '../tools/lib/deckfile.mjs';
+import { buildMap, parseMap, rebuildMap, isMapHtml, starterMap } from '../tools/lib/mapfile.mjs';
 import '../engine/deck-edit.js';
 
 const slideRanges = (html) => globalThis.JhDeckEdit.slideRanges(html);
@@ -226,6 +227,7 @@ function checkRevision(html, revision, name) {
 
 export function readDeck(ws, name) {
   const { file, html } = readDeckHtml(ws, name);
+  if (isMapHtml(html)) throw new Error(`${name} はマップ文書です。read_map / write_map を使ってください`);
   const d = parseDeck(html);
   return { name: path.basename(file, '.html'), file, revision: revisionOf(html), ...d, assetNames: Object.keys(d.assets) };
 }
@@ -288,7 +290,59 @@ export function restoreHistory(ws, name, id) {
   const src = path.join(historyDir(ws, name), path.basename(id).replace(/\.html$/, '') + '.html');
   if (!fs.existsSync(src)) throw new Error('履歴が見つかりません: ' + id);
   saveDeckFile(ws, name, file, html, fs.readFileSync(src, 'utf8'));
-  return readDeck(ws, name);
+  return readDoc(ws, name);
+}
+
+// ---------------------------------------------------------------------------
+// マップ文書 (スライドなしで読む資料。jh:map ブロックの JSON。保存・履歴の仕組みはデッキと同じ)
+// ---------------------------------------------------------------------------
+export function listMaps(ws) {
+  const dir = placeOf(ws).dir;
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir)
+    .filter((f) => f.endsWith('.html'))
+    .map((f) => {
+      const file = path.join(dir, f);
+      const html = fs.readFileSync(file, 'utf8');
+      if (!isMapHtml(html)) return null;
+      const m = parseMap(html);
+      return { name: f.replace(/\.html$/, ''), kind: 'map', title: m.title, theme: m.theme, brand: m.brand, nodes: m.nodeCount, updated: fs.statSync(file).mtime.toISOString() };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.updated.localeCompare(a.updated));
+}
+
+export function createMap(ws, { name, title, theme = 'default', brand, map }) {
+  assertTheme(ws, theme);
+  const base = /^\d{4}-\d{2}-\d{2}-/.test(name) ? name : `${today()}-${name}`;
+  const file = deckFile(ws, base);
+  if (fs.existsSync(file)) throw new Error('すでに存在します: ' + base);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const ctx = ctxFor(ws);
+  fs.writeFileSync(file, buildMap({ title, theme, brand: brand || 'none', map: map || starterMap(title) }, ctx));
+  return { name: base, file };
+}
+
+export function readMap(ws, name) {
+  const { file, html } = readDeckHtml(ws, name);
+  if (!isMapHtml(html)) throw new Error(`${name} はマップ文書ではありません (デッキは read_deck / write_deck)`);
+  return { name: path.basename(file, '.html'), kind: 'map', file, revision: revisionOf(html), ...parseMap(html) };
+}
+
+/** 指定した項目だけ更新する (map はオブジェクトか JSON 文字列。埋め込みの扱いは writeDeck と同じ) */
+export function writeMap(ws, name, fields = {}, { revision, upgrade = false } = {}) {
+  if (fields.theme) assertTheme(ws, fields.theme);
+  const { file, html } = readDeckHtml(ws, name);
+  if (!isMapHtml(html)) throw new Error(`${name} はマップ文書ではありません (デッキは write_deck)`);
+  checkRevision(html, revision, name);
+  saveDeckFile(ws, name, file, html, rebuildMap(html, fields, ctxFor(ws), { upgrade }));
+  return readMap(ws, name);
+}
+
+/** デッキかマップ文書かを見て読む */
+export function readDoc(ws, name) {
+  const { html } = readDeckHtml(ws, name);
+  return isMapHtml(html) ? readMap(ws, name) : readDeck(ws, name);
 }
 
 export function readGuide() {
