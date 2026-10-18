@@ -123,3 +123,35 @@ test('audit_deck・list_history・restore_history・export_deck・upgrade_deck �
   const up = await call('upgrade_deck', {});
   assert.ok(up.upgraded.includes(name), 'マップ文書も最新化する');
 });
+
+test('大きなマップの一部だけ: outline で目次、node で箱ごとに読み、node + part で箱ごとに置き換える', async () => {
+  await call('write_map', { name, map: goodMap });
+  const ol = await raw('read_map', { name, outline: true });
+  const outline = JSON.parse(ol.content[1].text.replace('=== outline ===\n', ''));
+  assert.deepEqual(outline.nodes.map((n) => n.id), ['web', 'sys']);
+  assert.deepEqual(outline.nodes[1].children.map((n) => n.id), ['sys.api', 'sys.db']);
+  assert.equal(outline.nodes[1].detail, undefined, '目次には detail を含めない');
+
+  const part = await raw('read_map', { name, node: 'sys' });
+  const head = JSON.parse(part.content[0].text);
+  const node = JSON.parse(part.content[1].text.replace('=== part ===\n', ''));
+  const ctx = JSON.parse(part.content[2].text.replace(/^=== context[^\n]*\n/, ''));
+  assert.equal(node.id, 'sys');
+  assert.equal(ctx.edges.length, 2, '外 (全体の edges) に書かれた、中につながる矢印');
+  assert.deepEqual(ctx.flows.map((f) => f.id), ['f']);
+
+  node.children.nodes.push({ id: 'sys.mq', label: '通知キュー', kind: 'queue' });
+  node.children.edges = [{ from: 'sys.api', to: 'sys.mq', label: '通知' }];
+  const w = await call('write_map', { name, node: 'sys', part: node, revision: head.revision });
+  assert.equal(w.audit.ok, true, JSON.stringify(w.audit));
+  const full = await raw('read_map', { name });
+  const map = JSON.parse(full.content[1].text.replace('=== map ===\n', ''));
+  assert.deepEqual(map.nodes[1].children.nodes.map((n) => n.id), ['sys.api', 'sys.db', 'sys.mq']);
+  assert.deepEqual(map.nodes[0], goodMap.nodes[0], '他の箱はそのまま');
+  assert.deepEqual(map.edges, goodMap.edges);
+
+  await assert.rejects(call('write_map', { name, node: 'sys', part: { id: 'other', label: 'x' } }), /id/);
+  await assert.rejects(call('write_map', { name, node: 'nope', part: { id: 'nope' } }), /見つかりません/);
+  await assert.rejects(call('write_map', { name, node: 'sys' }), /node と part/);
+  await assert.rejects(call('write_map', { name, node: 'sys', part: node, revision: head.revision }), /revision/);
+});

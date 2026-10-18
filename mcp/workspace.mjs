@@ -339,6 +339,80 @@ export function writeMap(ws, name, fields = {}, { revision, upgrade = false } = 
   return readMap(ws, name);
 }
 
+// ---- 大きなマップの一部だけを読み書きする (AI が一度に扱う量を減らす) ----
+function mapData(m) {
+  if (!m.map) throw new Error('マップのデータが JSON として読めません。read_map で全体を読んで直してください');
+  return m.map;
+}
+/** id のノードと、そこまでの道 (祖先のノード) を探す */
+function findNode(nodes, id, trail = []) {
+  for (const n of nodes || []) {
+    if (String(n.id) === id) return { node: n, list: nodes, trail };
+    const hit = n.children && findNode(n.children.nodes, id, [...trail, n]);
+    if (hit) return hit;
+  }
+  return null;
+}
+function idsIn(node, out = new Set()) {
+  out.add(String(node.id));
+  ((node.children && node.children.nodes) || []).forEach((c) => idsIn(c, out));
+  return out;
+}
+const tableOf = (ref) => String(ref).slice(0, String(ref).lastIndexOf('.'));
+
+/** マップの目次: id・名前・種類・中の数だけの木 (detail・列・矢印は含めない) */
+export function mapOutline(map) {
+  const walk = (nodes) => (nodes || []).map((n) => {
+    const item = { id: n.id, label: n.label };
+    if (n.kind) item.kind = n.kind;
+    if (n.columns) item.columns = n.columns.length;
+    const kids = n.children && n.children.nodes;
+    if (kids && kids.length) {
+      item.edges = (n.children.edges || []).length + (n.children.relations || []).length;
+      item.children = walk(kids);
+    }
+    return item;
+  });
+  return { title: map.title, nodes: walk(map.nodes), edges: (map.edges || []).length, flows: (map.flows || []).map((f) => ({ id: f.id, label: f.label })) };
+}
+
+/**
+ * 1 つのノード (children ごと) を読む。context には、そのノードの外に書かれていて中の部品につながる矢印・関連・流れを入れる
+ * (読むだけ。書き換えるときは、外に書かれたものは map 全体か、それが書かれている箱の node で直す)
+ */
+export function readMapPart(ws, name, id) {
+  const m = readMap(ws, name), map = mapData(m);
+  const hit = findNode(map.nodes, String(id));
+  if (!hit) throw new Error(`ノードが見つかりません: ${id} (read_map の outline で id を確かめてください)`);
+  const inside = idsIn(hit.node);
+  const touches = (a, b) => inside.has(a) !== inside.has(b) || (inside.has(a) && inside.has(b));
+  const context = { edges: [], relations: [], flows: [] };
+  (function walk(box, within) {
+    (box.edges || []).forEach((e) => { if (!within && touches(String(e.from), String(e.to))) context.edges.push(e); });
+    (box.relations || []).forEach((r) => { if (!within && touches(tableOf(r.from), tableOf(r.to))) context.relations.push(r); });
+    (box.nodes || []).forEach((n) => { if (n.children) walk(n.children, within || n === hit.node); });
+  })(map, false);
+  (map.flows || []).forEach((f) => {
+    if ((f.path || []).some((p) => inside.has(String(typeof p === 'object' && p ? p.id : p)))) context.flows.push(f);
+  });
+  return { ...m, part: hit.node, path: hit.trail.map((n) => n.id), context };
+}
+
+/** 1 つのノードを part (children ごと) で置き換える。part.id は同じ id にする */
+export function writeMapPart(ws, name, id, part, opts = {}) {
+  const m = readMap(ws, name), map = mapData(m);
+  if (opts.revision && opts.revision !== m.revision) {
+    throw new Error(`マップ文書 ${name} は読み込んだ後に変更されています (revision 不一致)。read_map で読み直してから修正してください`);
+  }
+  const obj = typeof part === 'string' ? JSON.parse(part) : part;
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) throw new Error('part にはノード 1 つ分のオブジェクトを渡してください');
+  if (String(obj.id) !== String(id)) throw new Error(`part の id (${obj.id}) が node (${id}) と違います。id を変えるときは map 全体を書き込んでください`);
+  const hit = findNode(map.nodes, String(id));
+  if (!hit) throw new Error(`ノードが見つかりません: ${id}`);
+  hit.list[hit.list.indexOf(hit.node)] = obj;
+  return writeMap(ws, name, { map }, { revision: opts.revision });
+}
+
 /** デッキかマップ文書かを見て読む */
 export function readDoc(ws, name) {
   const { html } = readDeckHtml(ws, name);

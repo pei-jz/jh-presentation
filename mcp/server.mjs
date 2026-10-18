@@ -28,6 +28,7 @@ import {
   PKG_ROOT, resolveWorkspace, ensureWorkspace, ctxFor, listDecks, createDeck, readDeck, writeDeck,
   replaceSlide, addAsset, listHistory, restoreHistory, saveDeckFile, isBrowserSaved, deckFile, listThemes, assertTheme, saveTheme, readGuide, readThemeGuide,
   brandDir, themesDir, promptsDir, deckPlace, placeOf, listMaps, createMap, readMap, writeMap, readDoc,
+  mapOutline, readMapPart, writeMapPart,
 } from './workspace.mjs';
 import { loadPromptTemplates, renderPrompt } from './prompts.mjs';
 import { buildGallery } from '../tools/lib/gallery.mjs';
@@ -89,7 +90,8 @@ const MCP_WORKFLOW = `
 (ユーザーが「マップ」「システムマップ」「スライドでなく資料で」「全体から細部へ」などと言ったとき。発表するならデッキ)。
 
 1. create_map で作る (書き方の見本を兼ねた最初のマップが入る)。保存先は作業フォルダの maps/、なければ既定のワークスペース。
-2. write_map の map にマップのデータ (JSON) を渡す。書き方はガイドの「階層マップ」(.diagram) と同じ
+2. write_map の map にマップのデータ (JSON) を渡す。書き方はガイドの「階層マップ」(.diagram) と同じ。
+   大きなマップは read_map の outline で目次を見て、node で箱ごとに読み、write_map の node + part で箱ごとに書き換える
    (nodes の children で入れ子、edges は一番細かい部品同士で 1 回だけ、flows でデータの流れ、detail に説明の HTML、tags で検索語)。steps は使わない。
 3. write_map の戻り値の audit を見る。data (存在しない id・流れの途切れ)・density (1 階層のノードが 12 個超)・overlap を直して書き込み直す。
 4. screenshot_deck で階層ごとの見た目を確認する (levels にノード id。'' は全体。select で部品を選んだ状態)。
@@ -535,12 +537,34 @@ tool('read_map', {
   title: 'マップ文書を読む',
   description:
     'マップ文書の編集可能な部分 (マップのデータ (JSON)・専用 CSS / JS・設定) と revision を返す。修正前に必ず読むこと。' +
-    'write_map に revision を渡すと、読んだ後に他で変更されていた場合に上書きを防げる。',
-  inputSchema: { name: mapName, dir: dirSchema },
+    'write_map に revision を渡すと、読んだ後に他で変更されていた場合に上書きを防げる。' +
+    '大きなマップ (ノードが数十を超える) は、outline: true で目次 (id・名前・種類・中の数) だけを読み、' +
+    'node に箱の id を渡してその箱 (children ごと) と、外からつながる矢印・関連・流れ (context) だけを読む。',
+  inputSchema: {
+    name: mapName,
+    outline: z.boolean().optional().describe('true: マップのデータの代わりに目次だけを返す'),
+    node: z.string().optional().describe('このノード (children ごと) だけを返す'),
+    dir: dirSchema,
+  },
   annotations: { readOnlyHint: true },
-}, async ({ name, dir }) => {
-  const { doc: m } = await findDoc(dir, name);
+}, async ({ name, outline, node, dir }) => {
+  const { P, doc: m } = await findDoc(dir, name);
   if (m.kind !== 'map') throw new Error(`${name} はデッキです (read_deck を使ってください)`);
+  const head = { ...mapInfo(m), revision: m.revision, engineVersion: m.version, latestVersion: pkg.version };
+  if (node != null) {
+    const r = readMapPart(P, name, node);
+    return {
+      content: [
+        text({ ...head, node, path: r.path, next: 'write_map に node と part (このノードの JSON 全体) を渡すと、この箱だけを置き換えられる' }),
+        text('=== part ===\n' + JSON.stringify(r.part, null, 2)),
+        text('=== context (外に書かれていて中につながるもの。読むだけ) ===\n' + JSON.stringify(r.context, null, 2)),
+      ],
+    };
+  }
+  if (outline) {
+    if (!m.map) throw new Error('マップのデータが JSON として読めません。outline なしで全体を読んで直してください');
+    return { content: [text(head), text('=== outline ===\n' + JSON.stringify(mapOutline(m.map), null, 2))] };
+  }
   return {
     content: [
       text({ ...mapInfo(m), revision: m.revision, engineVersion: m.version, latestVersion: pkg.version }),
@@ -554,12 +578,15 @@ tool('read_map', {
 tool('write_map', {
   title: 'マップ文書を書き込む',
   description:
-    'マップ文書のデータを書き込む。指定した項目だけ置き換え、省略した項目はそのまま残る。map は全体を渡す (一部だけの差分は不可)。' +
+    'マップ文書のデータを書き込む。指定した項目だけ置き換え、省略した項目はそのまま残る。map は全体を渡す。' +
+    '大きなマップの一部だけを直すときは、map の代わりに node (箱の id) と part (その箱の JSON 全体。children ごと。id は同じ) を渡す。' +
     '埋め込まれたビューア・テーマ・ブランドは変わらない (最新化は upgrade_deck)。保存前の内容は履歴に残る (list_history / restore_history)。' +
     '書き込み後に自動で検査し、結果を audit に返す (ok: false なら issues を直して書き込み直す)。',
   inputSchema: {
     name: mapName,
     map: mapSchema.optional(),
+    node: z.string().optional().describe('一部だけ置き換えるときの箱の id (part と一緒に渡す)'),
+    part: z.union([z.string(), z.record(z.string(), z.any())]).optional().describe('node の箱の JSON 全体 (children・その中の edges / relations ごと)'),
     css: z.string().optional().describe('専用 CSS の全内容'),
     js: z.string().optional().describe('専用 JS の全内容'),
     title: z.string().optional().describe('タイトル'),
@@ -568,9 +595,18 @@ tool('write_map', {
     revision: revisionSchema,
     dir: dirSchema,
   },
-}, async ({ name, revision, dir, ...fields }) => {
+}, async ({ name, revision, dir, node, part, ...fields }) => {
   const { P } = await findDoc(dir, name);
-  const m = writeMap(P, name, fields, { revision });
+  if ((node == null) !== (part == null)) throw new Error('一部だけ置き換えるときは node と part を両方渡してください');
+  if (node != null && fields.map !== undefined) throw new Error('map (全体) と node / part (一部) は同時に渡せません');
+  let m;
+  if (node != null) {
+    m = writeMapPart(P, name, node, part, { revision });
+    const rest = Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined));
+    if (Object.keys(rest).length) m = writeMap(P, name, rest);
+  } else {
+    m = writeMap(P, name, fields, { revision });
+  }
   return { content: [text({ saved: mapInfo(m), revision: m.revision, audit: await autoAuditMap(m.file), next: AFTER_WRITE_MAP })] };
 });
 
