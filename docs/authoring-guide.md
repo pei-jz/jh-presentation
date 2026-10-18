@@ -223,6 +223,33 @@ DB の箱の `children` にテーブル (`"kind": "table"`) を置き、列ど�
 - 6 テーブル程度までの 1 枚の ER 図なら、今までどおり `.er-diagram` でもよい
 - 関連の端の列が見つからないと `Deck.audit()` が `data` で知らせる。マップ文書の検索は列名でもテーブルを見つける
 
+#### 状態遷移図 (階層マップの中)
+ノードを `"kind": "state"` にすると状態遷移図になる。矢印が遷移で、`label` にイベント、`guard` に条件、`action` に処理を書く (「イベント [条件] / 処理」と表示)。
+`children` で状態の中に状態を入れられる (外側の状態に書いた遷移は、中のどの状態からでも使える)。`"simulate": true` で、今の状態から出ていける遷移がボタンになり、押して確かめられる。
+```html
+<div class="diagram"><script type="application/json">
+{
+  "title": "注文の状態", "simulate": true,
+  "nodes": [
+    { "id": "cart", "label": "カート", "kind": "state", "initial": true },             // initial: 初期状態 (黒丸から矢印)
+    { "id": "ordered", "label": "注文済み", "kind": "state", "children": {
+      "nodes": [{ "id": "ordered.unpaid", "label": "支払い待ち", "kind": "state", "initial": true },
+                { "id": "ordered.paid", "label": "支払い済み", "kind": "state" }],
+      "edges": [{ "from": "ordered.unpaid", "to": "ordered.paid", "label": "支払う", "action": "領収書を送る" }] } },
+    { "id": "canceled", "label": "取り消し", "kind": "state", "final": true }          // final: 終了状態 (二重枠)
+  ],
+  "edges": [
+    { "from": "cart", "to": "ordered", "label": "注文する", "guard": "在庫あり" },      // 中に状態を持つ状態へは、中の初期状態に入る
+    { "from": "ordered", "to": "canceled", "label": "取り消す" }                         // 注文済みの中のどの状態からでも
+  ],
+  "steps": [{ "note": "右下のボタンで遷移させる" }, { "state": "ordered.paid", "note": "支払い済みから" }]   // state: その状態から始める
+}
+</script></div>
+```
+- 1 つの階層の状態は 8 個程度まで。多ければ `children` でまとめる
+- `Deck.audit()` が `data` で知らせる: 初期状態がない、到達できない状態、出ていく遷移がない状態 (終了なら `final: true` を付ける)、中に状態があるのに中の初期状態がない
+- 遷移の名前を `flows` の `path` に並べる必要はない (流れは業務のデータ、状態遷移は 1 つのものの状態の移り変わり)
+
 #### マップ文書 (スライドなしで読む資料)
 大きなシステムの説明書・設計書は、スライドに分けずに **マップ文書** (`maps/<name>.html`) にできる。
 `npm run new -- <name> "タイトル" --kind map` (MCP: `create_map`) で作り、`jh:map` ブロックの JSON (上の階層マップと同じ書き方) を書く (MCP: `write_map` の `map`)。

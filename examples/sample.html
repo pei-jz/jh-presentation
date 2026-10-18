@@ -381,6 +381,43 @@
       <aside class="notes"><p>中身のある箱 (重なった箱) をクリックで中へ。左上のパンくず、Esc / Backspace で上の階層へ戻る。端の点線の箱をクリックすると、そのシステムへ移る。右下の「流れ」で業務の流れを選び、▶ で 1 区間ずつ追える。</p></aside>
     </section>
 
+    <section class="slide" id="dg-state">
+      <h2>注文の状態は、遷移させて確かめる</h2>
+      <div class="fill">
+        <div class="diagram">
+          <script type="application/json">
+          {
+            "title": "注文の状態",
+            "simulate": true,
+            "nodes": [
+              { "id": "cart", "label": "カート", "kind": "state", "initial": true },
+              { "id": "ordered", "label": "注文済み", "kind": "state",
+                "children": {
+                  "nodes": [
+                    { "id": "ordered.unpaid", "label": "支払い待ち", "kind": "state", "initial": true },
+                    { "id": "ordered.paid", "label": "支払い済み", "kind": "state" }
+                  ],
+                  "edges": [{ "from": "ordered.unpaid", "to": "ordered.paid", "label": "支払う", "action": "領収書を送る" }]
+                } },
+              { "id": "shipped", "label": "発送済み", "kind": "state", "final": true },
+              { "id": "canceled", "label": "取り消し", "kind": "state", "final": true }
+            ],
+            "edges": [
+              { "from": "cart", "to": "ordered", "label": "注文する", "guard": "在庫あり" },
+              { "from": "ordered.paid", "to": "shipped", "label": "発送する" },
+              { "from": "ordered", "to": "canceled", "label": "取り消す" }
+            ],
+            "steps": [
+              { "note": "右下のボタンで遷移させる。「取り消す」は注文済みの中のどの状態からでも使える" },
+              { "state": "ordered.paid", "note": "支払い済みから出ていけるのは「発送する」と「取り消す」" }
+            ]
+          }
+          </script>
+        </div>
+      </div>
+      <aside class="notes"><p>状態遷移図は "simulate": true で、今の状態から出ていける遷移がボタンになる。外側の状態 (注文済み) に書いた遷移は、中のどの状態からでも使える。</p></aside>
+    </section>
+
     <section class="slide" id="dg-er">
       <h2>ER 図はデータから自動で配置する</h2>
       <div class="fill">
@@ -2207,6 +2244,42 @@ body.deck-print-mode {
 .dg-minimap-view { fill: var(--accent-soft); fill-opacity: .35; stroke: var(--accent); stroke-width: 2px; vector-effect: non-scaling-stroke; }
 .dg-minimap-svg .dg-dot { display: none; }
 .deck-print-mode .dg-zoomui, .deck-print-mode .dg-minimap, .deck-thumb-slide .dg-zoomui, .deck-thumb-slide .dg-minimap { display: none !important; }
+
+/* ---- 状態遷移図 ---------------------------------------------------------- */
+.dg-state-start { fill: var(--fg); }
+.dg-state-final { fill: none; stroke: var(--border); stroke-width: 3; pointer-events: none; }
+.dg-node.is-current > .dg-state-final { stroke: var(--accent); }
+.dg-sim {
+  position: absolute;
+  right: 16px;
+  bottom: 12px;
+  z-index: 4;
+  max-width: 62%;
+  padding: 14px 18px;
+  border-radius: var(--radius);
+  font-size: 28px;
+  color: var(--fg);
+  background: var(--surface);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .1);
+}
+.dg-sim-now { font-weight: 700; }
+.dg-sim-events { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.dg-sim-btn {
+  padding: 6px 16px;
+  border: 2px solid var(--accent);
+  border-radius: 999px;
+  font: inherit;
+  font-size: 28px;
+  color: var(--accent);
+  background: var(--bg);
+  cursor: pointer;
+}
+.dg-sim-btn:hover { color: var(--on-accent); background: var(--accent); }
+.dg-sim-btn.is-reset { border-color: var(--border); color: var(--muted); }
+.dg-sim-end { color: var(--muted); }
+.dg-sim-history { margin-top: 6px; font-size: 28px; color: var(--muted); }
+.dg:has(> .dg-sim) > .dg-zoomui { bottom: 220px; }
+.deck-print-mode .dg-sim, .deck-thumb-slide .dg-sim { display: none !important; }
 
 }
 </style>
@@ -4663,7 +4736,7 @@ body.deck-print-mode {
       s('path', { class: 'dg-shape', d: 'M' + n.x + ' ' + (n.y + ry) + ' a' + n.w / 2 + ' ' + ry + ' 0 0 1 ' + n.w + ' 0 v' + (n.h - ry * 2) + ' a' + n.w / 2 + ' ' + ry + ' 0 0 1 -' + n.w + ' 0 z' }, g);
       s('path', { class: 'dg-shape-line', d: 'M' + n.x + ' ' + (n.y + ry) + ' a' + n.w / 2 + ' ' + ry + ' 0 0 0 ' + n.w + ' 0' }, g);
     } else {
-      s('rect', { class: 'dg-shape', x: n.x, y: n.y, width: n.w, height: n.h, rx: n.kind === 'user' ? n.h / 2 : 16 }, g);
+      s('rect', { class: 'dg-shape', x: n.x, y: n.y, width: n.w, height: n.h, rx: n.kind === 'user' ? n.h / 2 : n.kind === 'state' ? 36 : 16 }, g);
     }
   }
 
@@ -4676,7 +4749,8 @@ body.deck-print-mode {
   // ------------------------------------------------------------------
   function needsDrill(data) {
     if (data.drill || (Array.isArray(data.flows) && data.flows.length) || Array.isArray(data.relations)) return true;
-    if (JSON.stringify(data.nodes).indexOf('"kind":"table"') >= 0) return true; // テーブル (ER 図) は階層マップで描く
+    var json = JSON.stringify(data.nodes);
+    if (json.indexOf('"kind":"table"') >= 0 || json.indexOf('"kind":"state"') >= 0) return true; // テーブル (ER 図)・状態遷移図は階層マップで描く
     var top = {}, nested = {};
     data.nodes.forEach(function (n) { top[n.id] = true; });
     var deep = false;
@@ -4716,7 +4790,12 @@ body.deck-print-mode {
       (box.edges || []).forEach(function (e) {
         var from = String(e.from), to = String(e.to);
         if (!info[from] || !info[to] || from === '' || to === '') { problem('矢印の端のノードがありません: ' + from + ' -> ' + to); return; }
-        allEdges.push(Object.assign({}, e, { from: from, to: to, key: from + '->' + to }));
+        var ex = { from: from, to: to, key: from + '->' + to };
+        if (e.guard || e.action) { // 遷移: イベント [条件] / 処理
+          ex.event = e.label || '';
+          ex.label = [e.label, e.guard ? '[' + e.guard + ']' : '', e.action ? '/ ' + e.action : ''].filter(Boolean).join(' ');
+        }
+        allEdges.push(Object.assign({}, e, ex));
       });
       (box.nodes || []).forEach(function (n) { if (n.children && n.children.nodes && n.children.nodes.length) collect(n.children); });
     })(data);
@@ -4797,6 +4876,7 @@ body.deck-print-mode {
       if (hasKids && !n.sub) { n.hint = IS_PRINT && mapMode ? '中身は後のページ' : 'クリックで中へ'; n.h = 130; }
       if (boundary) n.detail = raw.detail || '';
       if (it.cols && !boundary) tableBox(n, it);
+      if (raw.kind === 'state' && !boundary) { n.initial = !!raw.initial; n.final = !!raw.final; }
       return n;
     }
 
@@ -4854,7 +4934,10 @@ body.deck-print-mode {
       var inner = edges.filter(function (e) { return !byId[e.from].boundary && !byId[e.to].boundary; });
       // 関連 (外部キー) は参照される側 (主キー) が左 / 上に来るよう、向きを逆にして並べる
       var forLayout = inner.map(function (e) { return e.items.every(function (i) { return i.rel; }) ? { from: e.to, to: e.from } : e; });
-      if (nodes.some(function (n) { return !n._fixed; })) autoLayout(nodes, forLayout, dir, data.gap || 160, data.gapCross || 70);
+      // 横並び (LR) では、矢印のラベル (遷移の「イベント [条件] / 処理」など) が箱に隠れないよう、間隔をラベルの長さに合わせて広げる
+      var longest = dir === 'LR' ? inner.reduce(function (m, e) { return e.rel ? m : Math.max(m, textWidth(e.label || '', 24)); }, 0) : 0;
+      var gapMain = Math.max(data.gap || 160, Math.min(longest + 70, 520));
+      if (nodes.some(function (n) { return !n._fixed; })) autoLayout(nodes, forLayout, dir, gapMain, data.gapCross || 70);
       // 境界ノード: 入ってくるものを始まりの側 (左 / 上)、出ていくものを終わりの側 (右 / 下) に並べる
       var b = nodes.length ? bounds(nodes) : [0, 0, 0, 0], gap = 240, gapCross = data.gapCross || 70;
       ['in', 'out'].forEach(function (side) {
@@ -4883,7 +4966,11 @@ body.deck-print-mode {
         var gb = bounds(members), pad = 40;
         return { label: g.label || '', rect: [gb[0] - pad, gb[1] - pad - 36, gb[2] + pad * 2, gb[3] + pad * 2 + 36] };
       }).filter(Boolean);
-      var all = nodes.concat(bnodes).map(function (n) { return { x: n.x, y: n.y, w: n.w + (n.hasKids ? 12 : 0), h: n.h + (n.hasKids ? 12 : 0) }; });
+      nodes.forEach(function (n) { n.dir = dir; });
+      var all = nodes.concat(bnodes).map(function (n) {
+        var ix = n.initial && dir === 'LR' ? 90 : 0, iy = n.initial && dir === 'TB' ? 90 : 0; // 初期状態の黒丸の分
+        return { x: n.x - ix, y: n.y - iy, w: n.w + ix + (n.hasKids ? 12 : 0), h: n.h + iy + (n.hasKids ? 12 : 0) };
+      });
       groups.forEach(function (g) { all.push({ x: g.rect[0], y: g.rect[1], w: g.rect[2], h: g.rect[3] }); });
       var fb = bounds(all), pad = 50;
       cache[p] = { id: p, dir: dir, nodes: nodes, bnodes: bnodes, byId: byId, edges: edges, groups: groups, full: [fb[0] - pad, fb[1] - pad, fb[2] + pad * 2, fb[3] + pad * 2] };
@@ -4910,6 +4997,46 @@ body.deck-print-mode {
     var cur = null, selected = null, navTok = 0;
     var dataState = null; // 強調中のデータの名前 (edges の data。マップ文書の「データ」で選ぶ)
     var flowState = null; // 強調中のデータの流れ { flow, upto (null = 全体、n = n 区間目まで), ui (流れボタンから選んだ) }
+    // ---- 状態遷移図 (kind: "state") ----
+    var states = Object.keys(info).filter(function (id) { return id && info[id].raw.kind === 'state'; });
+    var transitions = allEdges.filter(function (e) { return !e.rel && info[e.from].raw.kind === 'state' && info[e.to].raw.kind === 'state'; });
+    /** 状態に入ったときに実際にいる状態: 中に状態を持つなら、中の初期状態 (なければ最初の状態) へ下りていく */
+    function enterState(id) {
+      var guard = 0;
+      while (info[id] && info[id].kids.length && guard++ < 50) {
+        var kids = info[id].kids.filter(function (k) { return info[k].raw.kind === 'state'; });
+        if (!kids.length) break;
+        id = kids.filter(function (k) { return info[k].raw.initial; })[0] || kids[0];
+      }
+      return id;
+    }
+    /** 今の状態から出ていける遷移 (外側の状態に書かれた遷移も、中のどの状態からでも使える) */
+    function outgoing(id) {
+      var anc = chain(id);
+      return transitions.filter(function (e) { return anc.indexOf(e.from) >= 0; });
+    }
+    (function checkStates() { // 到達できない状態・行き止まりの状態・中の初期状態がない状態を知らせる
+      if (!states.length) return;
+      var top = states.filter(function (id) { return info[id].parent === '' || info[info[id].parent].raw.kind !== 'state'; });
+      var starts = top.filter(function (id) { return info[id].raw.initial; });
+      if (!starts.length) { problem('初期状態 (initial: true) がありません'); return; }
+      states.forEach(function (id) {
+        var kids = info[id].kids.filter(function (k) { return info[k].raw.kind === 'state'; });
+        if (kids.length && !kids.some(function (k) { return info[k].raw.initial; })) problem('状態「' + info[id].label + '」の中に初期状態 (initial: true) がありません');
+      });
+      var seen = {}, queue = starts.map(enterState);
+      while (queue.length) {
+        var at = queue.shift();
+        if (seen[at]) continue;
+        chain(at).forEach(function (a) { if (a) seen[a] = true; });
+        outgoing(at).forEach(function (e) { queue.push(enterState(e.to)); });
+      }
+      states.forEach(function (id) {
+        if (!seen[id]) problem('到達できない状態があります: ' + info[id].label + ' (' + id + ')');
+        else if (!info[id].kids.length && !info[id].raw.final && !outgoing(id).length) problem('出ていく遷移がない状態があります (終了状態なら final: true): ' + info[id].label + ' (' + id + ')');
+      });
+    })();
+    var sim = data.simulate && states.length && !IS_PRINT ? { cur: null, history: [] } : null; // 試しに遷移させる
     steps.forEach(function (st, i) {
       if (typeof st.flow === 'string' && !flowById[st.flow]) problem('steps[' + i + '] の flow「' + st.flow + '」は flows にありません');
     });
@@ -4924,6 +5051,7 @@ body.deck-print-mode {
     /** ステップが指す階層。at / zoom がなく、流れを順に追うステップなら、その区間が見える階層 */
     function stepLevel(st) {
       var at = st.at != null ? st.at : st.zoom, f = stepFlow(st);
+      if (at == null && sim && st.state && info[st.state]) return info[enterState(String(st.state))].parent;
       if (at == null && f && stepUpto(st, f)) return segLevel(f.segs[stepUpto(st, f) - 1]);
       return levelOf(at);
     }
@@ -4990,6 +5118,12 @@ body.deck-print-mode {
         st.textContent = second;
       }
       if (n.detail && !n.hasKids && !n.boundary) s('circle', { cx: n.x + n.w - 18, cy: n.y + 18, r: 7, class: 'dg-detail-mark' }, g);
+      if (n.final) s('rect', { class: 'dg-state-final', x: n.x + 7, y: n.y + 7, width: n.w - 14, height: n.h - 14, rx: 30 }, g);
+      if (n.initial) { // 初期状態: 黒丸から矢印
+        var tb = n.dir === 'TB', dx = tb ? n.x + n.w / 2 : n.x - 70, dy = tb ? n.y - 70 : n.y + n.h / 2;
+        s('circle', { class: 'dg-state-start', cx: dx, cy: dy, r: 14 }, g);
+        s('path', { class: 'dg-edge-line', d: 'M' + (tb ? dx : dx + 16) + ' ' + (tb ? dy + 16 : dy) + ' L' + (tb ? dx : n.x - 4) + ' ' + (tb ? n.y - 4 : dy), 'marker-end': 'url(#' + uid + '-arrow-n)' }, g);
+      }
     }
 
     function drawTable(n) {
@@ -5162,10 +5296,55 @@ body.deck-print-mode {
       var st = curStep();
       if (flowState) flowFocus(flowState);
       else if (dataState) dataFocus(dataState);
+      else if (sim) simFocus();
       else if (cur === stepLevel(st)) setFocus(st.focus, st.flow);
       else setFocus(null, null);
       setCaption(captionText());
       updateFlowUI();
+      updateSimUI();
+    }
+
+    /** 試しに遷移させる: 今の状態を光らせ、出ていける遷移に点を流す */
+    function simFocus() {
+      var out = outgoing(sim.cur);
+      setFocus([sim.cur].concat(out.map(function (e) { return e.to; })), out.map(function (e) { return e.key; }), { currentNodes: [sim.cur] });
+    }
+    function simReset(id) {
+      sim.cur = enterState(id || (states.filter(function (k) { return info[k].raw.initial && (info[k].parent === '' || info[info[k].parent].raw.kind !== 'state'); })[0] || states[0]));
+      sim.history = [];
+    }
+    /** 遷移する: 行き先の状態 (中に状態があれば中の初期状態) へ移り、その状態が見える階層を表示する */
+    function fire(e) {
+      var from = sim.cur;
+      sim.cur = enterState(e.to);
+      sim.history.push({ from: from, to: sim.cur, event: e.event || e.label || '' });
+      var p = info[sim.cur].parent;
+      if (p === cur) baseFocus(); else navigate(p);
+    }
+    var simUI = null;
+    if (sim) {
+      simUI = h('div', 'dg-sim', container);
+      simUI.addEventListener('click', function (ev) { ev.stopPropagation(); });
+    }
+    function updateSimUI() {
+      if (!simUI) return;
+      simUI.textContent = '';
+      h('div', 'dg-sim-now', simUI, '今の状態: ' + chain(sim.cur).reverse().slice(1).filter(function (id) { return info[id].raw.kind === 'state'; }).map(function (id) { return String(info[id].label).replace(/\n/g, ' '); }).join(' › '));
+      var out = outgoing(sim.cur);
+      var row = h('div', 'dg-sim-events', simUI);
+      if (!out.length) h('span', 'dg-sim-end', row, info[sim.cur].raw.final ? '終了' : '出ていく遷移がありません');
+      out.forEach(function (e) {
+        var b = h('button', 'dg-sim-btn', row, (e.event || e.label || '→') + ' → ' + String(info[e.to].label).replace(/\n/g, ' '));
+        b.type = 'button';
+        if (e.guard) b.title = '条件: ' + e.guard;
+        b.addEventListener('click', function () { fire(e); });
+      });
+      var reset = h('button', 'dg-sim-btn is-reset', row, '↺ 最初から');
+      reset.type = 'button';
+      reset.addEventListener('click', function () { simReset(); var p = info[sim.cur].parent; if (p === cur) baseFocus(); else navigate(p); });
+      if (sim.history.length) {
+        h('div', 'dg-sim-history', simUI, '履歴: ' + sim.history.slice(-4).map(function (x) { return x.event; }).join(' → '));
+      }
     }
 
     /** steps の at / zoom から階層を決める (中身のないノードなら、それが見える親の階層) */
@@ -5180,6 +5359,7 @@ body.deck-print-mode {
       panel.hide();
       var st = curStep(), f = stepFlow(st);
       flowState = f ? { flow: f, upto: stepUpto(st, f), ui: false } : null;
+      if (sim && (st.state || sim.cur == null)) simReset(st.state && info[st.state] ? String(st.state) : null);
       closeFlowMenu();
       setCaption(captionText());
       return go(stepLevel(st), animate).then(function (ok) {
@@ -5403,6 +5583,8 @@ body.deck-print-mode {
       drawLevel: function (p) { selected = null; panel.hide(); draw(p, false); baseFocus(); },
       showData: function (name) { dataState = name || null; if (dataState) flowState = null; closeFlowMenu(); baseFocus(); },
       svg: svgEl,
+      /** 状態遷移図: 今の状態と、出ていける遷移のイベント名 */
+      simState: function () { return sim ? { cur: sim.cur, events: outgoing(sim.cur).map(function (e) { return e.event || e.label; }), history: sim.history.slice() } : null; },
     };
 
     instances.push({

@@ -318,3 +318,53 @@ test('ターミナル再生: → キーでコマンドを 1 つずつ入力し�
   await goto('dg-term', 3); // 直接移動では入力演出なしで全部表示
   assert.equal(await q(() => document.querySelectorAll('#dg-term .term-line.is-cmd').length), 3);
 });
+
+test('状態遷移図: ボタンで遷移し、中に状態を持つ状態へは中の初期状態に入る。外側の遷移は中からも使える', async () => {
+  const sim = () => q(() => document.querySelector('#dg-state .dg').jhDiagram.simState());
+  await goto('dg-state', 0);
+  assert.deepEqual(await sim(), { cur: 'cart', events: ['注文する'], history: [] });
+  assert.ok(await q(() => !!document.querySelector('#dg-state .dg-state-start')), '初期状態に黒丸');
+  assert.equal(await q(() => document.querySelectorAll('#dg-state .dg-state-final').length), 2, '終了状態は二重枠');
+
+  await page.click('#dg-state .dg-sim-btn >> text=注文する');
+  await page.evaluate(() => window.Deck.settled(4000));
+  const s1 = await sim();
+  assert.equal(s1.cur, 'ordered.unpaid');
+  assert.deepEqual(s1.events.sort(), ['取り消す', '支払う']);
+  assert.equal(await q(() => document.querySelector('#dg-state .dg').getAttribute('data-level')), 'ordered');
+  assert.ok(await q(() => document.querySelector('#dg-state .dg-node[data-id="ordered.unpaid"]').classList.contains('is-current')));
+
+  await page.click('#dg-state .dg-sim-btn >> text=取り消す');
+  await page.evaluate(() => window.Deck.settled(4000));
+  const s2 = await sim();
+  assert.equal(s2.cur, 'canceled');
+  assert.deepEqual(s2.events, []);
+  assert.equal(await q(() => document.querySelector('#dg-state .dg-sim-end').textContent), '終了');
+
+  await goto('dg-state', 1); // steps の state でその状態から始める
+  assert.equal((await sim()).cur, 'ordered.paid');
+});
+
+test('状態遷移図の検査: 初期状態がない・到達できない・行き止まりの状態を data で報告する', async () => {
+  const check = async (data) => {
+    const bad = '<section class="slide"><div class="diagram"><script type="application/json">' + JSON.stringify(data) + '</script></div></section>';
+    const file = path.join(os.tmpdir(), 'jh-state-bad.html');
+    fs.writeFileSync(file, fs.readFileSync(fileURLToPath(SAMPLE), 'utf8').replace('<!-- jh:slides -->', '<!-- jh:slides -->' + bad));
+    const p2 = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+    await p2.goto(pathToFileURL(file).href);
+    await p2.waitForFunction(() => document.documentElement.classList.contains('deck-ready'));
+    const issues = await p2.evaluate(() => window.Deck.audit().filter((i) => i.type === 'data' && i.slide === 1).map((i) => i.message));
+    await p2.close();
+    return issues;
+  };
+  assert.deepEqual(await check({ nodes: [{ id: 'a', label: 'A', kind: 'state' }] }), ['初期状態 (initial: true) がありません']);
+  assert.deepEqual(await check({
+    nodes: [
+      { id: 'a', label: 'A', kind: 'state', initial: true },
+      { id: 'b', label: 'B', kind: 'state' },
+      { id: 'c', label: 'C', kind: 'state', final: true },
+      { id: 'x', label: 'X', kind: 'state', final: true },
+    ],
+    edges: [{ from: 'a', to: 'b', label: 'go' }, { from: 'x', to: 'c', label: 'z' }],
+  }), ['出ていく遷移がない状態があります (終了状態なら final: true): B (b)', '到達できない状態があります: C (c)', '到達できない状態があります: X (x)']);
+});

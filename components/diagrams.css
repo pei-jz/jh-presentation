@@ -573,3 +573,39 @@
 .dg-minimap-view { fill: var(--accent-soft); fill-opacity: .35; stroke: var(--accent); stroke-width: 2px; vector-effect: non-scaling-stroke; }
 .dg-minimap-svg .dg-dot { display: none; }
 .deck-print-mode .dg-zoomui, .deck-print-mode .dg-minimap, .deck-thumb-slide .dg-zoomui, .deck-thumb-slide .dg-minimap { display: none !important; }
+
+/* ---- 状態遷移図 ---------------------------------------------------------- */
+.dg-state-start { fill: var(--fg); }
+.dg-state-final { fill: none; stroke: var(--border); stroke-width: 3; pointer-events: none; }
+.dg-node.is-current > .dg-state-final { stroke: var(--accent); }
+.dg-sim {
+  position: absolute;
+  right: 16px;
+  bottom: 12px;
+  z-index: 4;
+  max-width: 62%;
+  padding: 14px 18px;
+  border-radius: var(--radius);
+  font-size: 28px;
+  color: var(--fg);
+  background: var(--surface);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .1);
+}
+.dg-sim-now { font-weight: 700; }
+.dg-sim-events { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.dg-sim-btn {
+  padding: 6px 16px;
+  border: 2px solid var(--accent);
+  border-radius: 999px;
+  font: inherit;
+  font-size: 28px;
+  color: var(--accent);
+  background: var(--bg);
+  cursor: pointer;
+}
+.dg-sim-btn:hover { color: var(--on-accent); background: var(--accent); }
+.dg-sim-btn.is-reset { border-color: var(--border); color: var(--muted); }
+.dg-sim-end { color: var(--muted); }
+.dg-sim-history { margin-top: 6px; font-size: 28px; color: var(--muted); }
+.dg:has(> .dg-sim) > .dg-zoomui { bottom: 220px; }
+.deck-print-mode .dg-sim, .deck-thumb-slide .dg-sim { display: none !important; }

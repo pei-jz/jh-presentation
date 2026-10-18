@@ -190,3 +190,6 @@ body.jh-map-printing .jh-map-main { display: none; }
 .jh-mapdoc .dg-minimap { left: 12px; bottom: 56px; width: 200px; height: 120px; border-width: 1px; }
 .jh-mapdoc .dg:has(> .dg-panel:not([hidden])) > .dg-zoomui { right: calc(min(380px, 45%) + 12px); }
 .jh-print-fig .dg-zoomui, .jh-print-fig .dg-minimap { display: none; }
+.jh-mapdoc .dg-sim { right: 56px; bottom: 10px; padding: 8px 12px; font-size: 14px; }
+.jh-mapdoc .dg-sim-btn { padding: 3px 10px; border-width: 1px; font-size: 14px; }
+.jh-mapdoc .dg-sim-history { font-size: 12px; }
