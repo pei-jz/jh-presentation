@@ -201,6 +201,13 @@
 .dg-edge-count circle { fill: var(--bg); stroke: var(--accent); stroke-width: 3; }
 .dg-edge-count text { font-size: 22px; font-weight: 700; fill: var(--accent); text-anchor: middle; dominant-baseline: central; }
 .dg-enter { animation: dg-fade .45s ease both; }
+/* 階層マップの移動: 寄りながら今の図を薄くし、中の図は少し小さい所から、外の図は少し大きい所から現れる */
+.dg.dg-leaving .dg-svg > g { opacity: .15; transition: opacity .5s ease .1s; }
+.dg-enter-in, .dg-enter-out { transform-box: view-box; transform-origin: 50% 50%; }
+.dg-enter-in { animation: dg-fade .45s ease both, dg-zoom-in .45s ease both; }
+.dg-enter-out { animation: dg-fade .45s ease both, dg-zoom-out .45s ease both; }
+@keyframes dg-zoom-in { from { transform: scale(.9); } }
+@keyframes dg-zoom-out { from { transform: scale(1.06); } }
 
 /* データの流れ: 今の区間を太く、右下に流れのボタン */
 .dg-edge.is-current .dg-edge-hi { stroke-width: 8; }
@@ -275,6 +282,7 @@
 .er-row.is-key .er-row-bg { fill: var(--emph-bg); }
 .er-col { font-size: 24px; fill: var(--fg); }
 .er-row.is-pk .er-col { font-weight: 700; }
+.er-more { font-size: 22px; fill: var(--muted); text-anchor: middle; }
 .er-type { font-size: 22px; fill: var(--muted); text-anchor: end; font-family: var(--font-mono); }
 .er-key { font-size: 21px; font-weight: 700; fill: var(--accent-3); font-family: var(--font-mono); }
 .er-row.is-pk .er-key { fill: var(--accent); }

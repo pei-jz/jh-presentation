@@ -180,3 +180,8 @@ body.jh-map-printing .jh-map-main { display: none; }
 @media (max-width: 860px) {
   .jh-mapdoc .dg:has(> .dg-panel:not([hidden])) > .dg-svg { width: 100%; height: 45%; }
 }
+.jh-mapdoc .er-detail { margin: 6px 0 4px; font-size: 14px; }
+.jh-mapdoc .er-detail td { padding: 3px 4px; }
+.jh-mapdoc .er-detail td:last-child { font-size: 12px; }
+.dg-links code { font-size: 12px; }
+.jh-print-cols { font-family: var(--font-mono); font-size: 11px; color: var(--muted); }

@@ -6,6 +6,7 @@
  *   - URL: #/<階層>/<選んだノード>。ブラウザの戻る・進むで階層を行き来でき、リンクで共有できる
  *   - ?print: 階層ごとに 1 ページ (図 + その階層の部品の説明) を並べた印刷用の表示
  *   - JhMap.audit() (= Deck.audit()): データの誤り・1 階層のノード数・文字の重なりを検査する
+ *   - エディタの iframe の中: F5 を「発表」としてホストに渡し、再読み込みを止める (bindHost)
  * 読み込み順: mapdoc.js → diagrams.js → JhMap.start()
  */
 (function () {
@@ -82,8 +83,42 @@
     buildHead(api);
     buildToc(api);
     if (PRINT) buildPrint(api);
-    else bindUrl(api);
+    else { bindUrl(api); bindHost(); }
     document.documentElement.classList.add('map-ready');
+  }
+
+  // ---- エディタ (ホスト) の iframe の中で動くとき ----
+  //   スライドのエンジンと同じ約束 (docs/edit-protocol.md) のうち、表示に関わるものだけを話す。
+  //   - ready に kind: 'map' を付けて、スライドのないマップ文書だと知らせる
+  //   - F5 / Ctrl+R: ブラウザの再読み込みを止める (iframe の中で押すと、エディタ全体が読み込み直される)。
+  //     F5 は「発表」としてホストに渡す
+  //   - 発表中の Esc: 図が使わなければ (詳細パネル・階層が閉じきっていれば)、発表の終了をホストに頼む
+  function bindHost() {
+    if (!window.parent || window.parent === window) return;
+    var presenting = false;
+    function post(msg) {
+      msg.jhdeck = 2;
+      try { window.parent.postMessage(msg, '*'); } catch (e) { /* なし */ }
+    }
+    window.addEventListener('message', function (ev) {
+      var d = ev.data;
+      if (!d || !d.jhdeck || ev.source !== window.parent) return;
+      if (d.type === 'present') presenting = !!d.on;
+    });
+    document.addEventListener('keydown', function (ev) {
+      var k = ev.key, mod = ev.ctrlKey || ev.metaKey;
+      if (k === 'F5' || (mod && (k === 'r' || k === 'R'))) {
+        ev.preventDefault();
+        if (k === 'F5') post({ type: 'present' });
+        return;
+      }
+      // 図の Esc (diagrams.js) は先に捕捉フェーズで処理して止めるので、ここへ来るのは図が使わなかった Esc
+      if (k === 'Escape' && presenting && !/^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName)) {
+        ev.preventDefault();
+        post({ type: 'present-exit' });
+      }
+    });
+    post({ type: 'ready', kind: 'map', slides: 0, index: 0, step: 0 });
   }
 
   // ---- 上の帯: ブランド・題名・検索・データ・印刷 ----
@@ -111,7 +146,8 @@
     var results = h('ul', 'jh-map-results', searchBox);
     results.hidden = true;
     var index = api.nodes().map(function (n) {
-      return { n: n, text: [n.label, n.sub, (n.tags || []).join(' '), plain(n.detail)].join(' ').toLowerCase() };
+      var cols = (n.columns || []).map(function (c) { return c.name + ' ' + (c.note || ''); }).join(' ');
+      return { n: n, text: [n.label, n.sub, (n.tags || []).join(' '), plain(n.detail), cols].join(' ').toLowerCase() };
     });
     function search() {
       var q = input.value.trim().toLowerCase();
@@ -196,8 +232,10 @@
       if (quiet) return;
       var hs = hashOf(ev.detail.level, ev.detail.selected);
       if (hs === location.hash || (!location.hash && hs === '#/')) { lastLevel = ev.detail.level; return; }
-      if (ev.detail.level !== lastLevel) history.pushState(null, '', hs); // 階層の移動は履歴に残す (戻るで戻れる)
-      else history.replaceState(null, '', hs);
+      try {
+        if (ev.detail.level !== lastLevel) history.pushState(null, '', hs); // 階層の移動は履歴に残す (戻るで戻れる)
+        else history.replaceState(null, '', hs);
+      } catch (e) { /* 埋め込み (srcdoc・<base> 付き) では URL を変えられない。表示はそのまま続ける */ }
       lastLevel = ev.detail.level;
     });
     function apply() {
@@ -225,7 +263,7 @@
       svg.removeAttribute('id');
       fig.appendChild(svg);
       var kids = nodes.filter(function (n) { return n.parent === p; });
-      var rows = kids.filter(function (n) { return n.sub || n.detail || n.hasKids; });
+      var rows = kids.filter(function (n) { return n.sub || n.detail || n.hasKids || (n.columns && n.columns.length); });
       if (rows.length) {
         var table = h('table', 'table jh-print-table', page);
         rows.forEach(function (n) {
@@ -235,6 +273,9 @@
           var td = h('td', null, tr);
           if (n.sub) h('div', 'muted', td, n.sub);
           if (n.detail) { var d = h('div', null, td); d.innerHTML = n.detail; }
+          if (n.columns && n.columns.length) { // テーブル: 列の一覧
+            h('div', 'jh-print-cols', td, n.columns.map(function (c) { return (c.pk ? 'PK ' : c.fk ? 'FK ' : '') + c.name + (c.type ? ' ' + c.type : ''); }).join(' / '));
+          }
         });
       }
     });

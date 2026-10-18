@@ -107,6 +107,15 @@ iframe は opaque origin (sandbox で allow-same-origin なし) なので `targe
 (Ctrl+S をホストに渡す、バッジに「保存はエディタで」と出す)。
 
 iframe の中では、F5 / Ctrl+R によるブラウザの再読み込みを常に止める (iframe 内で押すと、ホストのページ全体が読み込み直されるため)。
+
+### マップ文書 (`<meta name="jh-kind" content="map">`)
+
+マップ文書にもデッキと同じ generator の meta があるので、`isDeck` は true になる。
+ただしスライドも編集できる枠もないので、話すのは表示に関わるものだけ。
+
+- デッキ → ホスト: `ready` (`{ kind: 'map', slides: 0, index: 0, step: 0 }`)、`present` (F5)、`present-exit` (発表中に図が使わなかった Esc)
+- ホスト → デッキ: `present` (`{ on }`) だけを受け付ける。`goto` / `edit` / `next` / `prev` は無視する
+- 場所 (階層・選んだノード) はマップの中で完結する。別ウィンドウと位置を合わせる仕組みはないので、ホストは 1 画面で発表する
 保存できたら (ホストなし: 書き込みの成功時、ホストあり: `saved` の受信時) 編集モードは自動で終了する。
 
 ## ソースへの反映

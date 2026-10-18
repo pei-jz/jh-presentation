@@ -65,7 +65,7 @@ test('目次: すべてのノードが並び、クリックでその階層へ入
 
 test('URL を開くと、その階層とノードが表示される (共有できる)', async () => {
   const p2 = await browser.newPage({ viewport: { width: 1440, height: 860 } });
-  await p2.goto(URL_ + '#/order/order.db');
+  await p2.goto(URL_ + '#/order/order.mq');
   await p2.waitForFunction(() => document.documentElement.classList.contains('map-ready'));
   await p2.evaluate(() => window.Deck.settled(4000));
   const st = await p2.evaluate(() => ({
@@ -75,8 +75,8 @@ test('URL を開くと、その階層とノードが表示される (共有で�
   }));
   await p2.close();
   assert.equal(st.level, 'order');
-  assert.equal(st.panel, '注文 DB');
-  assert.ok(st.links.includes('入ってくる (2)'), '詳細パネルにつながりの一覧が付く');
+  assert.equal(st.panel, '通知キュー');
+  assert.ok(st.links.includes('入ってくる (1)') && st.links.includes('出ていく (1)'), '詳細パネルにつながりの一覧が付く');
 });
 
 test('検索: 名前・説明で探し、Enter でその部品へ移る', async () => {
@@ -110,7 +110,8 @@ test('印刷 (?print): 階層ごとに 1 ページ、Deck.audit() は空', async
   await p2.waitForFunction(() => document.documentElement.classList.contains('map-ready'));
   const titles = await p2.evaluate(() => [...document.querySelectorAll('.jh-print-page h2')].map((h) => h.textContent));
   await p2.close();
-  assert.deepEqual(titles, ['EC サイト', 'EC サイト › フロント', 'EC サイト › 注文システム', 'EC サイト › 注文システム › 注文 API', 'EC サイト › 在庫システム']);
+  assert.deepEqual(titles, ['EC サイト', 'EC サイト › フロント', 'EC サイト › 注文システム', 'EC サイト › 注文システム › 注文 API', 'EC サイト › 注文システム › 注文 DB',
+    'EC サイト › 在庫システム', 'EC サイト › 在庫システム › 在庫 DB']);
   assert.deepEqual(await q(() => window.Deck.audit()), []);
 });
 
@@ -127,4 +128,50 @@ test('検査: 1 つの階層のノードが多すぎると density で知らせ�
   await p2.close();
   fs.rmSync(file);
   assert.ok(types.includes('density'));
+});
+
+test('詳細パネルのつながり: クリックでその部品へ移る (<base> のある埋め込みでも、フレームが別のページへ移らない)', async () => {
+  // エディタのプレビューと同じく、srcdoc の iframe に <base> を付けて読み込む
+  const html = fs.readFileSync(SAMPLE, 'utf8').replace(/<head>/i, '<head><base href="https://example.invalid/dir/">');
+  const p2 = await browser.newPage({ viewport: { width: 1440, height: 860 } });
+  await p2.setContent('<iframe id="f" style="width:1400px;height:820px;border:0" sandbox="allow-scripts"></iframe>');
+  await p2.evaluate((src) => { document.getElementById('f').srcdoc = src; }, html);
+  const frame = await (await p2.$('#f')).contentFrame();
+  await frame.waitForFunction(() => document.documentElement.classList.contains('map-ready'));
+  await frame.evaluate(() => { JhMap.api.reveal('order.db'); return window.Deck.settled(4000); });
+  await frame.click('.dg-links a[data-dg-go="order.api.confirm"]');
+  await frame.evaluate(() => window.Deck.settled(4000));
+  const st = await frame.evaluate(() => ({ level: JhMap.api.level(), sel: JhMap.api.selected(), url: location.href }));
+  await p2.close();
+  assert.equal(st.url, 'about:srcdoc', 'フレームはそのまま');
+  assert.equal(st.level, 'order.api');
+  assert.equal(st.sel, 'order.api.confirm');
+});
+
+test('エディタの iframe の中: ready (kind: map) を送り、F5 は再読み込みせず「発表」としてホストへ渡す', async () => {
+  const html = fs.readFileSync(SAMPLE, 'utf8');
+  const p2 = await browser.newPage({ viewport: { width: 1440, height: 860 } });
+  await p2.setContent('<iframe id="f" style="width:1400px;height:820px;border:0" sandbox="allow-scripts"></iframe>');
+  await p2.evaluate((src) => {
+    window.got = [];
+    window.addEventListener('message', (ev) => { if (ev.data && ev.data.jhdeck) window.got.push(ev.data); });
+    document.getElementById('f').srcdoc = src;
+  }, html);
+  const frame = await (await p2.$('#f')).contentFrame();
+  await frame.waitForFunction(() => document.documentElement.classList.contains('map-ready'));
+  const prevented = await frame.evaluate(() => {
+    const ev = new KeyboardEvent('keydown', { key: 'F5', bubbles: true, cancelable: true });
+    document.body.dispatchEvent(ev);
+    return ev.defaultPrevented;
+  });
+  await p2.waitForFunction(() => window.got.some((m) => m.type === 'present'));
+  // 発表中: 図が使わない Esc は発表の終了をホストに頼む
+  await p2.evaluate(() => document.getElementById('f').contentWindow.postMessage({ jhdeck: 2, type: 'present', on: true }, '*'));
+  await frame.evaluate(() => new Promise((r) => setTimeout(r, 50)));
+  await frame.evaluate(() => document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+  await p2.waitForFunction(() => window.got.some((m) => m.type === 'present-exit'));
+  const got = await p2.evaluate(() => window.got.map((m) => m.type + (m.kind ? ':' + m.kind : '')));
+  await p2.close();
+  assert.ok(prevented, 'F5 の既定の動作 (再読み込み) を止める');
+  assert.equal(got[0], 'ready:map');
 });

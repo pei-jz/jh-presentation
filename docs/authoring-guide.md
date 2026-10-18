@@ -201,6 +201,27 @@ Claude Code (このリポジトリ) からも、MCP サーバー経由でも、�
 - 矢印のクリックで、その矢印を通る流れの名前も出る
 - steps の `flow` は文字列なら流れの id、配列なら今までどおり矢印の key (`"a->b"`) の並び
 
+#### テーブルと ER 図 (階層マップの中)
+DB の箱の `children` にテーブル (`"kind": "table"`) を置き、列どうしの関連を `relations` に書くと、DB の中に入ったときに ER 図になる。
+機能 → テーブルの矢印に `"type": "write"` / `"read"` を付けると、上の階層では「機能 → DB」の矢印にまとまり、詳細パネルでは「書き込む機能・読む機能」(テーブル側) / 「書き込む先・読む先」(機能側) として並ぶ (CRUD 表の代わり)。
+```jsonc
+{ "id": "order.db", "label": "注文 DB", "kind": "db", "children": {
+  "nodes": [
+    { "id": "order.db.users",  "label": "users",  "kind": "table", "detail": "<p>会員</p>",
+      "columns": ["id PK bigint", "name varchar", { "name": "phone", "type": "varchar", "note": "任意" }] },
+    { "id": "order.db.orders", "label": "orders", "kind": "table", "columns": ["id PK bigint", "user_id FK bigint", "status varchar"] }
+  ],
+  "relations": [{ "from": "order.db.orders.user_id", "to": "order.db.users.id", "card": "N:1" }]   // "テーブルの id.列名"
+} }
+// edges (どの階層に書いてもよい)
+{ "from": "order.api.save", "to": "order.db.orders", "label": "保存", "type": "write" }       // type: read は破線
+```
+- 列の書き方は ER 図 (`.er-diagram`) と同じ。箱に出る列は 10 行まで (主キー・外部キーを先に。残りは「ほか N 列」)。全部の列は詳細パネルに出る
+- 関連は参照される側 (主キー) が左に来るよう自動で並び、列の行どうしを線で結んで両端に多重度の印を付ける。テーブルを選ぶと結合に使う列が光る
+- 1 つの DB のテーブルは 8 個程度まで。多ければ業務のまとまりごとに箱 (`children`) を分ける
+- 6 テーブル程度までの 1 枚の ER 図なら、今までどおり `.er-diagram` でもよい
+- 関連の端の列が見つからないと `Deck.audit()` が `data` で知らせる。マップ文書の検索は列名でもテーブルを見つける
+
 #### マップ文書 (スライドなしで読む資料)
 大きなシステムの説明書・設計書は、スライドに分けずに **マップ文書** (`maps/<name>.html`) にできる。
 `npm run new -- <name> "タイトル" --kind map` (MCP: `create_map`) で作り、`jh:map` ブロックの JSON (上の階層マップと同じ書き方) を書く (MCP: `write_map` の `map`)。
