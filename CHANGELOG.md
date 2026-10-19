@@ -8,6 +8,32 @@ Decks record the engine version that built them (`<meta name="generator">`). Wri
 engine; run `upgrade_deck` / `npm run upgrade` to move a deck to the current engine. The edit protocol version is
 documented in `docs/edit-protocol.md`; hosts and save servers refuse edits from decks with a different version.
 
+## [0.8.0]
+
+### Added
+- **Hierarchy maps** in `.diagram`: nest boxes to any depth and click into them. Each level is redrawn at full size,
+  with a breadcrumb (Esc / Backspace go up). Arrows are written once between the finest parts and roll up into
+  counted arrows at higher levels; parts connected to the outside appear as dashed boundary boxes.
+- **Data flows** (`flows`): named paths across levels. Highlight a whole flow, or step through it with ▶ / ◀ (the
+  view moves into the level of each segment); steps can use `flow` + `upto`. Reverse segments animate backwards.
+- **Map documents** (`maps/`, `npm run new -- <name> --kind map`): a single-file HTML document without slides, with a
+  table of contents, search, data filter, detail panel listing connections, shareable URLs (`#/<level>/<node>`), and
+  one printed page per level. `npm run pdf` / `upgrade` and the preview server handle maps.
+- **ER diagrams inside maps**: tables (`kind: "table"`) inside a DB box, column-level `relations` with cardinality
+  marks, highlighted join columns, and CRUD lists from `type: "write"` / `"read"` arrows.
+- **State machines** (`kind: "state"`): initial / final states, nested states, transitions shown as
+  `event [guard] / action`, and `"simulate": true` to click through transitions.
+- Pan, zoom (wheel, pinch, buttons) and a minimap for maps (`"pan": true` on slides).
+- MCP: `create_map`, `read_map` (`outline` for a table of contents, `node` for one box), `write_map` (`node` +
+  `part` to replace one box). `list_decks`, `audit_deck`, `screenshot_deck` (`levels`, `select`), `open_deck`
+  (`level`), `export_deck`, history and `upgrade_deck` work with maps. `--maps-dir` / `JH_PRESENTATION_MAPS_DIR`.
+- `Deck.audit()` reports diagram data errors as `data` (missing ids, broken flows, unknown columns, unreachable
+  or dead-end states); maps also report `density` and text overlaps on every level.
+
+### Fixed
+- Interrupted camera moves no longer leave `Deck.settled` waiting until its timeout, and screenshots wait for the
+  full zoom-in animation.
+
 ## [0.7.0]
 
 ### Added

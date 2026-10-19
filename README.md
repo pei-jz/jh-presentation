@@ -33,6 +33,8 @@ AI models are far better at writing HTML/CSS/JS than at driving PPTX. That makes
 
 - **Single-file decks** — engine, theme, brand and images are embedded. No build step, no CDN, works from `file://`
 - **Diagram components (data in, motion out)** — flow diagrams / zoom maps, ER diagrams, sequence diagrams, charts (bar, line, pie, donut), 3D layer stacks, before/after sliders, terminal replays. The AI writes JSON; layout, animation, clicks and the static PDF view are handled for you
+- **Hierarchy maps** — click into a big system diagram level by level (breadcrumbs, boundary boxes, arrows rolled up per level), follow named data flows across levels, open tables and foreign keys inside a DB box, and click through state machines
+- **Map documents** — the same map as a single-file document without slides: table of contents, search, shareable URLs, pan / zoom / minimap, one printed page per level
 - **Steps** — arrow keys reveal content one step at a time; components hook into the same steps
 - **Themes** — five built-in themes (default, dark, corporate, pop, mono), a live theme gallery, and AI-generated custom themes
 - **Branding** — your name, logo and a label (e.g. DRAFT) in a header/footer band
@@ -108,7 +110,8 @@ The workspace also holds the brand, custom themes and request templates shared b
 | Themes | `list_themes`, `open_theme_gallery`, `preview_themes`, `get_theme_guide`, `create_theme` |
 | Templates | `list_templates` (also exposed as MCP prompts) |
 | Decks | `list_decks`, `create_deck`, `read_deck`, `write_deck`, `replace_slide`, `add_asset`, `upgrade_deck`, `list_history`, `restore_history`, `repair_deck` |
-| Checking | `audit_deck`, `screenshot_deck` |
+| Maps | `create_map`, `read_map` (whole, `outline`, or one `node`), `write_map` (whole, or one `node` + `part`) |
+| Checking | `audit_deck`, `screenshot_deck` (decks and maps) |
 | Output | `open_deck` (optionally fullscreen), `export_deck` (PDF) |
 
 ## Presenting
@@ -166,6 +169,8 @@ Everything runs on your machine: no telemetry, no outbound requests, the preview
 **AI にプレゼンを「Web ページ」として作らせる MCP サーバー**です。Claude Desktop・Claude Code・VS Code などの AI クライアントが内容を書き、jh-presentation が**1 ファイルの HTML デッキ**にします。動く図・段階表示・その場での文字編集・PDF 出力に対応し、AI は検査とスクリーンショットで自分の出来を確認して直せます。API キーは不要です (考えるのは普段使っている AI クライアント)。
 
 - **動く図の部品**: 関連図・ズームマップ・ER 図・シーケンス図・グラフ・3D 分解図・ビフォー・アフター・ターミナル再生 (AI は JSON を書くだけ)
+- **階層マップ**: 大きなシステムの関連図をクリックで何段でも中へ。階層をまたぐデータの流れ、DB の中のテーブルと外部キー、状態遷移図 (遷移させて確かめる)
+- **マップ文書**: スライドなしで全体から細部へたどって読む 1 ファイルの資料 (目次・検索・URL での共有・拡大縮小・階層ごとの印刷)
 - **テーマ 5 種 + 自作テーマ**、**名前・ロゴの帯**、**依頼文テンプレート** (技術解説・LT・進捗報告・技術提案)
 - **枠をダブルクリックして文字を直し、Ctrl+S で元のファイルに保存** (ブラウザの「名前を付けて保存」は使わない)
 - **発表者ビュー・一覧・全画面**、保存履歴と復元、壊れたデッキの復旧

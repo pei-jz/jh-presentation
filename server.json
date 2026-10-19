@@ -7,12 +7,12 @@
     "url": "https://github.com/pei-jz/jh-presentation",
     "source": "github"
   },
-  "version": "0.7.0",
+  "version": "0.8.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "jh-presentation",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "transport": {
         "type": "stdio"
       },
@@ -26,6 +26,12 @@
         {
           "name": "JH_PRESENTATION_DECKS_DIR",
           "description": "Folder name for decks inside the client's workspace (default: decks)",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "JH_PRESENTATION_MAPS_DIR",
+          "description": "Folder name for map documents inside the client's workspace (default: maps)",
           "isRequired": false,
           "format": "string"
         },
