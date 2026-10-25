@@ -95,6 +95,38 @@ test('2. audit は画像の欠落・文字の重なり・低コントラスト�
   assert.ok(r.warnings.some((w) => w.includes('asset')), 'エンジンの警告');
 });
 
+test('2. audit は余白へのはみ出し・ページ番号との重なり・タイトルの折り返しを検出する', async () => {
+  const file = deckFile(`<section class="slide" id="code">
+  <h2>コード</h2>
+  <div class="fill cols-2"><div><pre class="code"><code>${'const veryLongIdentifierName = callSomething(argumentNumberOne, argumentNumberTwo, three1);'}</code></pre></div><div><p>説明</p></div></div>
+</section>
+<section class="slide" id="pn">
+  <h2>ページ番号</h2>
+  <div class="fill"></div>
+  <div class="callout" style="margin-right:-120px;margin-bottom:-90px"><p>右下まで伸びたコールアウト</p></div>
+</section>
+<section class="slide" id="wrap">
+  <h2>とても長いタイトルはタイトル帯の中で二行に折り返してしまい読みにくくなるのでもっと短くする</h2>
+</section>
+<section class="slide" id="ok">
+  <h2 class="allow-wrap">とても長いタイトルはタイトル帯の中で二行に折り返してしまい読みにくくなるのでもっと短くする</h2>
+</section>`, { css: '.flow .mono { font-size: 28px; }' });
+  const r = await auditDeck(file);
+  assert.ok(r.overflow.some((x) => x.slide === 1 && x.area === 'margin' && x.direction === 'right'), `コードが右の余白へ: ${JSON.stringify(r.overflow)}`);
+  assert.ok(r.overlap.some((x) => x.slide === 2 && x.element.includes('ページ番号')), `ページ番号: ${JSON.stringify(r.overlap)}`);
+  assert.ok(r.wrap.some((x) => x.slide === 3 && x.lines >= 2), 'タイトルの折り返し');
+  assert.ok(!r.wrap.some((x) => x.slide === 4), 'allow-wrap は除外');
+});
+
+test('2. デッキ専用 CSS は .flow の中の文字サイズも上書きできる', async () => {
+  const file = deckFile(`<section class="slide" id="f"><h2>flow</h2>
+  <div class="flow"><div><p class="mono">a</p></div><div class="mono">b</div></div></section>`, { css: '.flow .mono { font-size: 28px; }' });
+  const { browser, page } = await openPage(file);
+  const sizes = await page.evaluate(() => [...document.querySelectorAll('.mono')].map((e) => getComputedStyle(e).fontSize));
+  await browser.close();
+  assert.deepEqual(sizes, ['28px', '28px']);
+});
+
 test('2. 見本デッキと全テーマで誤検出しない', async () => {
   const { dir, themes } = buildGallery(path.join(tmp, 'gallery'), readThemes(path.join(ROOT, 'themes')), ctx);
   const files = [path.join(ROOT, 'examples', 'sample.html'), ...themes.map((t) => path.join(dir, t.name + '.html'))];

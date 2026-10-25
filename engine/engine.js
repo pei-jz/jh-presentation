@@ -549,8 +549,10 @@
   /**
    * レイアウトの検査。問題ごとに { type, slide, element, ... } を返す (空配列 = 検査した範囲では問題なし)
    *   overflow : スライドの外にはみ出している (SVG 内の文字ラベルも対象)   … 許可: .allow-overflow
+   *              area: 'margin' はスライドの余白 (padding) に食い込んでいる (通常の流れの要素のみ)
    *   clipped  : overflow:hidden などで中身が切れている
-   *   overlap  : 文字同士が重なっている                                     … 許可: .allow-overlap
+   *   overlap  : 文字同士、または文字・背景のある箱とページ番号が重なっている … 許可: .allow-overlap
+   *   wrap     : 通常スライドのタイトル (先頭の h2) が 2 行以上に折り返している … 許可: .allow-wrap
    *   contrast : 文字と背景のコントラスト比が 3:1 未満 (背景が単色の場合のみ) … 許可: .allow-low-contrast
    *   asset    : data-asset の画像が埋め込まれていない
    *   image    : 画像を読み込めない (壊れている・参照先がない)
@@ -564,9 +566,30 @@
     var issues = [];
     var textOf = function (e) { return (e.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40); };
 
+    // ページ番号の場所 (発表画面では全スライド共通の 1 つ。いちばん長い番号を入れて測る)
+    var pagenoRect = null;
+    if (chrome.pageno) {
+      var pnHidden = chrome.pageno.hidden, pnText = chrome.pageno.textContent;
+      chrome.pageno.hidden = false;
+      chrome.pageno.textContent = slides.length + ' / ' + slides.length;
+      pagenoRect = chrome.pageno.getBoundingClientRect();
+      chrome.pageno.hidden = pnHidden;
+      chrome.pageno.textContent = pnText;
+    }
+
     slides.forEach(function (s, i) {
       var r = s.getBoundingClientRect();
       var texts = [];
+      // 本文の領域 (スライドの padding の内側)。通常の流れの要素がここから出ると余白に食い込んでいる
+      var ss = getComputedStyle(s);
+      var safe = {
+        left: r.left + parseFloat(ss.paddingLeft) * k, right: r.right - parseFloat(ss.paddingRight) * k,
+        top: r.top + parseFloat(ss.paddingTop) * k, bottom: r.bottom - parseFloat(ss.paddingBottom) * k,
+      };
+      var intruders = [];
+      var pn = MODE === 'print' ? s.querySelector('.deck-print-pageno') : (s.classList.contains('no-chrome') ? null : pagenoRect);
+      if (pn && pn.nodeType === 1) pn = pn.getBoundingClientRect();
+      var pnHits = [];
       s.querySelectorAll('*').forEach(function (e) {
         if (e.closest('aside.notes')) return;
         var inSvg = !!e.closest('svg') && e.tagName.toLowerCase() !== 'svg';
@@ -581,6 +604,24 @@
         if (!e.closest('.allow-overflow')) {
           var worst = Math.max((r.left - b.left) / k, (b.right - r.right) / k, (r.top - b.top) / k, (b.bottom - r.bottom) / k);
           if (worst > tol) issues.push({ type: 'overflow', slide: i + 1, element: describe(e), overflowPx: Math.round(worst), text: textOf(e) });
+          // 余白への食い込み (コードが横に伸びて段組みを押し広げた など)。いちばん外側の要素だけを報告する
+          else if (!inSvg && e !== s && inFlow(e, s) && !intruders.some(function (x) { return x.contains(e); })) {
+            var side = { left: (safe.left - b.left) / k, right: (b.right - safe.right) / k, top: (safe.top - b.top) / k, bottom: (b.bottom - safe.bottom) / k };
+            var dir = Object.keys(side).reduce(function (p, q) { return side[q] > side[p] ? q : p; });
+            if (side[dir] > tol) {
+              intruders.push(e);
+              issues.push({ type: 'overflow', slide: i + 1, element: describe(e), area: 'margin', direction: dir, overflowPx: Math.round(side[dir]), text: textOf(e) });
+            }
+          }
+        }
+        // ページ番号との重なり (文字、または背景・枠のある箱)
+        if (pn && e !== s && !e.closest('.deck-print-pageno, .allow-overlap') && !pnHits.some(function (x) { return x.contains(e); })) {
+          var boxes = isSvgText ? [b] : ownTextRects(e);
+          if (!inSvg && paintsBox(cs)) boxes = boxes.concat([b]);
+          if (boxes.some(function (q) { return q.left < pn.right && q.right > pn.left && q.top < pn.bottom && q.bottom > pn.top; })) {
+            pnHits.push(e);
+            issues.push({ type: 'overlap', slide: i + 1, element: describe(e) + ' × ページ番号', text: textOf(e) });
+          }
         }
         // 内部で切れている
         if (!inSvg && e !== s && cs.overflowX !== 'visible' && cs.overflowY !== 'visible' && !e.closest('.allow-overflow')) {
@@ -599,6 +640,13 @@
           }
         }
       });
+
+      // タイトル帯の見出しの折り返し (通常スライドのみ。意図的なら .allow-wrap)
+      var title = s.querySelector(':scope > h2:first-child, :scope > .slide-title');
+      if (title && !/(^|\s)layout-/.test(s.className) && !title.classList.contains('allow-wrap')) {
+        var lines = lineCount(title);
+        if (lines > 1) issues.push({ type: 'wrap', slide: i + 1, element: describe(title), lines: lines, text: textOf(title) });
+      }
 
       // 文字同士の重なり (親子関係にあるものは除く)
       for (var a = 0; a < texts.length; a++) {
@@ -643,6 +691,40 @@
       Array.prototype.forEach.call(range.getClientRects(), function (rc) { if (rc.width > 1 && rc.height > 1) rects.push(rc); });
     });
     return rects;
+  }
+
+  /** 要素の文字が何行に分かれているか */
+  function lineCount(e) {
+    var range = document.createRange();
+    range.selectNodeContents(e);
+    var rects = Array.prototype.filter.call(range.getClientRects(), function (rc) { return rc.width > 1 && rc.height > 1; });
+    rects.sort(function (p, q) { return p.top - q.top; });
+    var lines = 0, bottom = -Infinity;
+    rects.forEach(function (rc) {
+      // 前の行の下端より (高さの半分以上) 下から始まる矩形は次の行
+      if (rc.top >= bottom - rc.height / 2) { lines++; bottom = rc.bottom; }
+      else bottom = Math.max(bottom, rc.bottom);
+    });
+    return lines;
+  }
+
+  /** 通常の流れの要素か (自身・祖先が absolute / fixed なら飾り・重ね合わせとみなす) */
+  function inFlow(e, slide) {
+    for (var n = e; n && n !== slide; n = n.parentElement) {
+      var p = getComputedStyle(n).position;
+      if (p === 'absolute' || p === 'fixed') return false;
+    }
+    return true;
+  }
+
+  /** 背景か枠線が描かれる箱か */
+  function paintsBox(cs) {
+    var bg = parseColor(cs.backgroundColor);
+    if ((bg && bg.a > 0) || (cs.backgroundImage && cs.backgroundImage !== 'none')) return true;
+    return ['Top', 'Right', 'Bottom', 'Left'].some(function (d) {
+      var c = parseColor(cs['border' + d + 'Color']);
+      return parseFloat(cs['border' + d + 'Width']) > 0 && cs['border' + d + 'Style'] !== 'none' && c && c.a > 0;
+    });
   }
 
   /** 2 つの矩形群の重なり (小さい方の面積に対する割合の最大値) */

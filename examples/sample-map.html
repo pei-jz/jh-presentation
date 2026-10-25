@@ -928,6 +928,8 @@
   height: 680px;
 }
 .fill > .dg, .fill > .dg-stack { height: 100%; }
+/* .fill 自体が段組みのとき、行の高さを .fill に収める (行が図の中身に合わせて伸び、下の余白にはみ出さないように) */
+.fill:is(.cols-2, .cols-3, .cols-4, .cols-2-1, .cols-1-2):has(> .dg, > .dg-stack) { grid-auto-rows: minmax(0, 1fr); }
 .dg > script, .dg-stack > script { display: none; }
 .dg-step { display: none; }
 .dg-svg {

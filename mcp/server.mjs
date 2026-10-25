@@ -652,11 +652,12 @@ tool('restore_history', {
 tool('audit_deck', {
   title: 'レイアウトを検査',
   description:
-    'ヘッドレスブラウザでプレゼンテーション資料 (スライド・デッキ) を開き、次の項目を検査する: はみ出し・切れ (overflow)、文字の重なり (overlap)、' +
+    'ヘッドレスブラウザでプレゼンテーション資料 (スライド・デッキ) を開き、次の項目を検査する: はみ出し・切れ・余白への食い込み (overflow。area: margin は本文がスライドの余白に入り込んでいる)、' +
+      '文字の重なり・ページ番号との重なり (overlap)、タイトルの 2 行への折り返し (wrap)、' +
     'コントラスト不足 (contrast)、画像の欠落・読み込み失敗 (images)、小さすぎる文字 (smallText)、JS エラー (errors)、' +
     'エンジンの警告 (warnings)、外部への通信 (externalRequests。オフラインで動かなくなるので不可)。' +
     'ok: true は「検査した項目で問題が見つからなかった」という意味で、見た目の良し悪しは screenshot_deck で確認すること。' +
-    '意図的な重なり・はみ出しは .allow-overlap / .allow-overflow で除外できる。' +
+    '意図的な重なり・はみ出し・折り返しは .allow-overlap / .allow-overflow / .allow-wrap で除外できる。' +
     'write_deck / replace_slide は書き込み後に同じ検査を自動で行うので、これは書き込まずに検査し直したいときに使う。' +
     'マップ文書も検査できる (データの誤り data・1 階層のノード数 density・全階層の文字の重なり overlap・JS エラーなど)。',
   inputSchema: { name: docName, dir: dirSchema },

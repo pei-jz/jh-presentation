@@ -128,6 +128,7 @@ export async function auditDeck(deckFile) {
         stepsPerSlide: slides.map((s) => s._steps.length),
         overflow: pick('overflow', 'clipped'),
         overlap: pick('overlap'),
+        wrap: pick('wrap'),
         contrast: pick('contrast'),
         images: pick('asset', 'image'),
         data: pick('data'),
@@ -135,7 +136,7 @@ export async function auditDeck(deckFile) {
       };
     });
     const warnings = log.warnings.filter((w) => w.startsWith('[deck]'));
-    const found = result.overflow.length + result.overlap.length + result.contrast.length + result.images.length + result.data.length +
+    const found = result.overflow.length + result.overlap.length + result.wrap.length + result.contrast.length + result.images.length + result.data.length +
       result.smallText.length + log.errors.length + warnings.length + log.external.length;
     return {
       ok: found === 0,
@@ -147,7 +148,7 @@ export async function auditDeck(deckFile) {
   });
 }
 
-const AUDIT_KEYS = ['overflow', 'overlap', 'contrast', 'images', 'data', 'density', 'smallText', 'errors', 'warnings', 'externalRequests'];
+const AUDIT_KEYS = ['overflow', 'overlap', 'wrap', 'contrast', 'images', 'data', 'density', 'smallText', 'errors', 'warnings', 'externalRequests'];
 
 /**
  * auditDeck の結果を、書き込みの戻り値に添える短い形にする (問題がなければ 1 行、あれば種類ごとに最大 10 件)
