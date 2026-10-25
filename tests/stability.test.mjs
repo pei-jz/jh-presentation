@@ -98,7 +98,7 @@ test('2. audit は画像の欠落・文字の重なり・低コントラスト�
 test('2. audit は余白へのはみ出し・ページ番号との重なり・タイトルの折り返しを検出する', async () => {
   const file = deckFile(`<section class="slide" id="code">
   <h2>コード</h2>
-  <div class="fill cols-2"><div><pre class="code"><code>${'const veryLongIdentifierName = callSomething(argumentNumberOne, argumentNumberTwo, three1);'}</code></pre></div><div><p>説明</p></div></div>
+  <div class="fill cols-2"><div><div class="wide" style="min-width:1600px;height:40px;background:var(--surface)"></div></div><div><p>説明</p></div></div>
 </section>
 <section class="slide" id="pn">
   <h2>ページ番号</h2>
@@ -112,7 +112,8 @@ test('2. audit は余白へのはみ出し・ページ番号との重なり・�
   <h2 class="allow-wrap">とても長いタイトルはタイトル帯の中で二行に折り返してしまい読みにくくなるのでもっと短くする</h2>
 </section>`, { css: '.flow .mono { font-size: 28px; }' });
   const r = await auditDeck(file);
-  assert.ok(r.overflow.some((x) => x.slide === 1 && x.area === 'margin' && x.direction === 'right'), `コードが右の余白へ: ${JSON.stringify(r.overflow)}`);
+  // 中身の最小幅で段組みが押し広げられ、右の余白に食い込む (長いコードと同じ状況。コードの文字幅は OS のフォントで変わるので、幅を決めた箱で作る)
+  assert.ok(r.overflow.some((x) => x.slide === 1 && x.area === 'margin' && x.direction === 'right'), `段組みが右の余白へ: ${JSON.stringify(r.overflow)}`);
   assert.ok(r.overlap.some((x) => x.slide === 2 && x.element.includes('ページ番号')), `ページ番号: ${JSON.stringify(r.overlap)}`);
   assert.ok(r.wrap.some((x) => x.slide === 3 && x.lines >= 2), 'タイトルの折り返し');
   assert.ok(!r.wrap.some((x) => x.slide === 4), 'allow-wrap は除外');
