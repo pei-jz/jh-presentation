@@ -8,6 +8,35 @@ Decks record the engine version that built them (`<meta name="generator">`). Wri
 engine; run `upgrade_deck` / `npm run upgrade` to move a deck to the current engine. The edit protocol version is
 documented in `docs/edit-protocol.md`; hosts and save servers refuse edits from decks with a different version.
 
+## [0.9.0]
+
+### Added
+- **Map documents**: a theme picker in the header switches between all built-in themes embedded in the document
+  (the choice is remembered; `?theme=<name>` also works). The document's own theme stays the default.
+- **Map documents**: the ☰ button collapses the table of contents (remembered), and branches open and close with
+  a triangle. With more than 40 nodes, deeper branches start closed; the current level's branch opens automatically.
+- `Deck.audit()` reports body text running into the slide margin or the page number (`overflow` with
+  `area: "margin"`, page-number overlaps) and slide titles that wrap to two lines (`wrap`, exempt with `allow-wrap`).
+  MCP `audit_deck` reports them too.
+- Examples: `examples/sample-map-large.html` (a 135-part travel booking system across 34 levels) and
+  `examples/sample-er-1000.html` (1,000 tables and 1,291 foreign keys).
+
+### Changed
+- Entering a level of a hierarchy map zooms much less (1.35× instead of 2.2×, 380 ms) and cross-fades the inner
+  diagram; with `prefers-reduced-motion` the camera does not move.
+- Automatic layout reorders nodes within each column to reduce crossing arrows (only when it actually reduces
+  them), wraps very long columns (6+ boxes that make the diagram taller than wide) into staggered columns, and
+  does the same for crowded boundary boxes. Small diagrams keep their layout.
+- Arrow labels in hierarchy maps are placed where they do not overlap boxes, counts or other labels; labels with
+  no free spot are hidden and shown on hover or highlight. Count badges move along the arrow to avoid overlaps.
+- The npm package no longer includes `examples/` (494.7 kB → 180.7 kB).
+
+### Fixed
+- Printing a map document from the normal view (print button or Ctrl+P) printed only the visible screen. It now
+  prints one page per level, like `?print`, without opening a new tab.
+- Map documents' overlap check now also covers arrow count badges.
+- When `.fill` itself is a column grid, a diagram row grew with its content and spilled into the bottom margin.
+
 ## [0.8.0]
 
 ### Added

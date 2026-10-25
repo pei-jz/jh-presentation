@@ -34,7 +34,7 @@ AI models are far better at writing HTML/CSS/JS than at driving PPTX. That makes
 - **Single-file decks** — engine, theme, brand and images are embedded. No build step, no CDN, works from `file://`
 - **Diagram components (data in, motion out)** — flow diagrams / zoom maps, ER diagrams, sequence diagrams, charts (bar, line, pie, donut), 3D layer stacks, before/after sliders, terminal replays. The AI writes JSON; layout, animation, clicks and the static PDF view are handled for you
 - **Hierarchy maps** — click into a big system diagram level by level (breadcrumbs, boundary boxes, arrows rolled up per level), follow named data flows across levels, open tables and foreign keys inside a DB box, and click through state machines
-- **Map documents** — the same map as a single-file document without slides: table of contents, search, shareable URLs, pan / zoom / minimap, one printed page per level
+- **Map documents** — the same map as a single-file document without slides: collapsible table of contents, search, shareable URLs, pan / zoom / minimap, a theme picker, one printed page per level
 - **Steps** — arrow keys reveal content one step at a time; components hook into the same steps
 - **Themes** — five built-in themes (default, dark, corporate, pop, mono), a live theme gallery, and AI-generated custom themes
 - **Branding** — your name, logo and a label (e.g. DRAFT) in a header/footer band
@@ -170,7 +170,7 @@ Everything runs on your machine: no telemetry, no outbound requests, the preview
 
 - **動く図の部品**: 関連図・ズームマップ・ER 図・シーケンス図・グラフ・3D 分解図・ビフォー・アフター・ターミナル再生 (AI は JSON を書くだけ)
 - **階層マップ**: 大きなシステムの関連図をクリックで何段でも中へ。階層をまたぐデータの流れ、DB の中のテーブルと外部キー、状態遷移図 (遷移させて確かめる)
-- **マップ文書**: スライドなしで全体から細部へたどって読む 1 ファイルの資料 (目次・検索・URL での共有・拡大縮小・階層ごとの印刷)
+- **マップ文書**: スライドなしで全体から細部へたどって読む 1 ファイルの資料 (開閉できる目次・検索・URL での共有・拡大縮小・テーマの切り替え・階層ごとの印刷)
 - **テーマ 5 種 + 自作テーマ**、**名前・ロゴの帯**、**依頼文テンプレート** (技術解説・LT・進捗報告・技術提案)
 - **枠をダブルクリックして文字を直し、Ctrl+S で元のファイルに保存** (ブラウザの「名前を付けて保存」は使わない)
 - **発表者ビュー・一覧・全画面**、保存履歴と復元、壊れたデッキの復旧
