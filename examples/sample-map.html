@@ -2613,7 +2613,7 @@ body.jh-map-printing .jh-map-main { display: none; }
       var count = api.levelNodeCount(p);
       if (count > 12) issues.push({ type: 'density', level: where, count: count, message: '1 つの階層のノードが ' + count + ' 個あります。12 個程度までにし、多ければ children で入れ子にする' });
       api.drawLevel(p);
-      var texts = Array.prototype.slice.call(api.svg.querySelectorAll('.dg-nodes text, .dg-edge-label')).map(function (t) {
+      var texts = Array.prototype.slice.call(api.svg.querySelectorAll('.dg-nodes text, .dg-edge-label, .dg-edge-count text')).map(function (t) {
         return { t: t, r: t.getBoundingClientRect(), node: t.closest('.dg-node') };
       }).filter(function (x) { return x.r.width && x.r.height && x.t.textContent.trim(); });
       for (var i = 0; i < texts.length; i++) {
@@ -2945,6 +2945,10 @@ body.jh-map-printing .jh-map-main { display: none; }
     var ranks = [];
     nodes.forEach(function (n) { (ranks[n._rank] = ranks[n._rank] || []).push(n); });
     var split = []; // 列ごとの折り返しの数 (1 = 折り返さない)
+    // 同じ列の中で直接つながる箱どうし (行き来する関係など) の間は広げる (矢印・本数の丸・ラベルの置き場所を作る)
+    var linked = {};
+    es.forEach(function (e) { linked[e.from + '|' + e.to] = linked[e.to + '|' + e.from] = true; });
+    var gapAfter = function (a, b) { return b && linked[a.id + '|' + b.id] && a._rank === b._rank ? gapCross * 2.4 : gapCross; };
     function place() {
       var main = 0;
       ranks.forEach(function (rank, ri) {
@@ -2955,14 +2959,13 @@ body.jh-map-printing .jh-map-main { display: none; }
         var step = k > 1 ? rank.reduce(function (t, n) { return t + (dir === 'TB' ? n.w : n.h) + gapCross; }, 0) / rank.length / k : 0;
         cols.forEach(function (col, c) {
           var size = 0, cross = 0;
-          col.forEach(function (n) { size = Math.max(size, dir === 'TB' ? n.h : n.w); cross += (dir === 'TB' ? n.w : n.h) + gapCross; });
-          cross -= gapCross;
+          col.forEach(function (n, j) { size = Math.max(size, dir === 'TB' ? n.h : n.w); cross += (dir === 'TB' ? n.w : n.h) + (j < col.length - 1 ? gapAfter(n, col[j + 1]) : 0); });
           // 折り返した列は少しずつずらす (奥の列へ向かう矢印が、手前の列の箱の間を通れるように)
           var pos = -cross / 2 + (c - (k - 1) / 2) * step;
-          col.forEach(function (n) {
+          col.forEach(function (n, j) {
             if (n._fixed) return;
-            if (dir === 'TB') { n.x = pos; n.y = main + (size - n.h) / 2; pos += n.w + gapCross; }
-            else { n.x = main + (size - n.w) / 2; n.y = pos; pos += n.h + gapCross; }
+            if (dir === 'TB') { n.x = pos; n.y = main + (size - n.h) / 2; pos += n.w + gapAfter(n, col[j + 1]); }
+            else { n.x = main + (size - n.w) / 2; n.y = pos; pos += n.h + gapAfter(n, col[j + 1]); }
           });
           main += size + (c < k - 1 ? gapCross + 30 : gapMain);
         });
@@ -3239,6 +3242,7 @@ body.jh-map-printing .jh-map-main { display: none; }
   }
 
   function drawEdges(layer, edges, byId, uid, obstacles) {
+    var badges = []; // 本数の丸の中心
     edges.forEach(function (e, i) {
       var a = byId[e.from], b = byId[e.to];
       if (!a || !b) { console.warn('[diagram] 矢印の端のノードがありません: ' + e.from + ' -> ' + e.to); return; }
@@ -3253,8 +3257,25 @@ body.jh-map-printing .jh-map-main { display: none; }
       var g = drawEdge(layer, e, i, p1, p2, uid);
       if (e.hit) s('path', { d: g._d, class: 'dg-edge-hit' }, g);
       if (e.count > 1) { // 集約した矢印: 元の矢印の本数
+        // 中点が他の丸・箱と重なるとき (行き来する矢印が近い箱の間にあるなど) は、線に沿ってずらす。
+        // どこも空いていなければ、一番離れられる位置にする
+        if (g._geo) {
+          var room = function (pt) { // 他の丸・箱までの距離 (箱の中なら負)
+            var d = badges.reduce(function (m, b) { return Math.min(m, Math.hypot(b[0] - pt[0], b[1] - pt[1]) - 56); }, Infinity);
+            (obstacles || []).forEach(function (n) {
+              var dx = Math.max(n.x - 24 - pt[0], 0, pt[0] - (n.x + n.w + (n.hasKids ? 12 : 0) + 24));
+              var dy = Math.max(n.y - 24 - pt[1], 0, pt[1] - (n.y + n.h + (n.hasKids ? 12 : 0) + 24));
+              d = Math.min(d, dx || dy ? Math.hypot(dx, dy) : -1);
+            });
+            return d;
+          };
+          var cands = [0.5, 0.4, 0.6, 0.32, 0.68, 0.25, 0.75].map(function (t) { return quadPoint(g._geo, t); });
+          g._mid = cands.filter(function (pt) { return room(pt) > 0; })[0] || cands.reduce(function (a, b) { return room(b) > room(a) ? b : a; });
+        }
+        badges.push(g._mid);
         var c = s('g', { class: 'dg-edge-count' }, g);
-        s('circle', { cx: g._mid[0], cy: g._mid[1], r: 20 }, c);
+        g._badgeR = String(e.count).length > 2 ? 26 : 20; // 3 桁は丸を大きく
+        s('circle', { cx: g._mid[0], cy: g._mid[1], r: g._badgeR }, c);
         var ct = s('text', { x: g._mid[0], y: g._mid[1] }, c);
         ct.textContent = e.count;
       }
@@ -3273,7 +3294,10 @@ body.jh-map-printing .jh-map-main { display: none; }
       return [n.x - 6, n.y - 6, n.x + n.w + k + 6, n.y + n.h + k + 6];
     });
     var gs = Array.prototype.slice.call(layer.querySelectorAll(':scope > .dg-edge'));
-    gs.forEach(function (g) { if (g.querySelector('.dg-edge-count')) taken.push([g._mid[0] - 24, g._mid[1] - 24, g._mid[0] + 24, g._mid[1] + 24]); });
+    gs.forEach(function (g) {
+      var r = (g._badgeR || 20) + 4;
+      if (g.querySelector('.dg-edge-count')) taken.push([g._mid[0] - r, g._mid[1] - r, g._mid[0] + r, g._mid[1] + r]);
+    });
     function free(b) { return !taken.some(function (t) { return b[0] < t[2] && b[2] > t[0] && b[1] < t[3] && b[3] > t[1]; }); }
     gs.forEach(function (g) {
       var t = g._label, geo = g._geo;

@@ -99,7 +99,7 @@ function indexPage() {
   p{color:#6b7280}
 </style></head><body>
 <h1>Decks</h1>
-<p><a href="/gallery/">テーマギャラリー</a>　/　<a href="/examples/sample.html">機能の見本</a>　/　スライド表示中に <b>?</b> キーで操作一覧、<b>S</b> で発表者ビュー</p>
+<p><a href="/gallery/">テーマギャラリー</a>　/　<a href="/examples/sample.html">機能の見本</a>　/　マップ文書の見本: <a href="/examples/sample-map.html">基本</a>・<a href="/examples/sample-map-large.html">大規模 (135 部品)</a>・<a href="/examples/sample-er-1000.html">ER 図 1,000 テーブル</a>　/　スライド表示中に <b>?</b> キーで操作一覧、<b>S</b> で発表者ビュー</p>
 ${rows ? `<ul>${rows}</ul>` : '<p>decks/ にデッキがありません。<code>npm run new -- my-talk "タイトル"</code> で作成できます。</p>'}
 <h1 style="margin-top:40px">Maps</h1>
 ${maps ? `<ul>${maps}</ul>` : '<p>maps/ にマップ文書がありません。<code>npm run new -- my-system "タイトル" --kind map</code> で作成できます (<a href="/examples/sample-map.html">見本</a>)。</p>'}

@@ -15,7 +15,7 @@ themes/       同梱テーマ (default / dark / corporate / pop / mono)
 brand/        ブランド設定 (名前・ロゴ) のサンプル。brand.json + ロゴ
 decks/        デッキ (1 ファイルの HTML)
 maps/         マップ文書 (スライドなしで、全体から細部へたどって読む 1 ファイルの HTML。`--kind map`)
-examples/     sample.html (機能一覧の見本) / sample-map.html (マップ文書の見本)
+examples/     sample.html (機能一覧の見本) / sample-map.html (マップ文書の見本) / sample-map-large.html (大規模システム) / sample-er-1000.html (ER 図 1,000 テーブル)
 docs/         AI 向けガイド (authoring-guide.md / theme-guide.md)
 prompts/      依頼文テンプレート (技術解説・LT・進捗報告など。MCP のプロンプトとして登録される)
 mcp/          MCP サーバー (npx で起動。他の AI クライアントから同じ道具を使う)

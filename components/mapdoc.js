@@ -441,7 +441,7 @@
       var count = api.levelNodeCount(p);
       if (count > 12) issues.push({ type: 'density', level: where, count: count, message: '1 つの階層のノードが ' + count + ' 個あります。12 個程度までにし、多ければ children で入れ子にする' });
       api.drawLevel(p);
-      var texts = Array.prototype.slice.call(api.svg.querySelectorAll('.dg-nodes text, .dg-edge-label')).map(function (t) {
+      var texts = Array.prototype.slice.call(api.svg.querySelectorAll('.dg-nodes text, .dg-edge-label, .dg-edge-count text')).map(function (t) {
         return { t: t, r: t.getBoundingClientRect(), node: t.closest('.dg-node') };
       }).filter(function (x) { return x.r.width && x.r.height && x.t.textContent.trim(); });
       for (var i = 0; i < texts.length; i++) {

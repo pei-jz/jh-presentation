@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // デッキに埋め込まれたエンジン・テーマ・ブランドを最新にする
-//   npm run upgrade              → decks/*.html と maps/*.html すべて (と examples/ の見本)
+//   npm run upgrade              → decks/*.html と maps/*.html すべて (と examples/*.html の見本)
 //   npm run upgrade -- <name>    → 指定したデッキだけ
 // <head> の meta (jh-theme / jh-brand) を書き換えた後もこれで反映する。
 // 旧形式 (decks/<name>/index.html) のデッキがあれば 1 ファイル形式に変換する。
@@ -17,7 +17,12 @@ migrated.forEach((n) => console.log(`変換しました (旧形式 → 1 ファ�
 const name = process.argv[2];
 const files = name
   ? [deckPathOrExit(name, { maps: true })]
-  : [...listRepoDecks(), ...listRepoMaps()].map((d) => d.file).concat(['sample.html', 'sample-map.html'].map((f) => path.join(ROOT, 'examples', f)).filter((f) => fs.existsSync(f)));
+  : [...listRepoDecks(), ...listRepoMaps()].map((d) => d.file).concat(examples());
+/** examples/ の見本 (デッキ・マップ文書) */
+function examples() {
+  const dir = path.join(ROOT, 'examples');
+  return fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith('.html')).sort().map((f) => path.join(dir, f)) : [];
+}
 for (const file of files) {
   const html = fs.readFileSync(file, 'utf8');
   fs.writeFileSync(file, isMapHtml(html) ? rebuildMap(html, {}, ctx, { upgrade: true }) : rebuildDeck(html, {}, ctx, { upgrade: true }));
