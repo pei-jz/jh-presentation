@@ -341,7 +341,7 @@ test('自動配置: 書いた順のままだと矢印が交差するときは、
 
 test('混み合う矢印: ラベルは箱・他のラベルと重ならない位置に置き、置けないものは隠して触れたときに出す', async () => {
   const edges = [];
-  for (let i = 0; i < 5; i++) for (let k = 0; k < 3; k++) edges.push({ from: 'a' + i, to: 'b' + ((i + k * 2) % 5), label: '少し長めのラベル ' + i + '-' + k });
+  for (let i = 0; i < 5; i++) for (let k = 0; k < 5; k++) edges.push({ from: 'a' + i, to: 'b' + ((i + k * 2) % 5), label: '少し長めのラベル ' + i + '-' + k });
   const { p2, done } = await openMap({ nodes: [...col('a'), ...col('b')], edges });
   const st = await p2.evaluate(() => ({
     labels: document.querySelectorAll('.jh-map-stage .dg-edge-label').length,
@@ -349,12 +349,33 @@ test('混み合う矢印: ラベルは箱・他のラベルと重ならない位
     issues: window.Deck.audit(),
   }));
   if (st.crowded) {
-    const g = p2.locator('.jh-map-stage .dg-edge:has(.dg-edge-label.is-crowded)').first();
-    await g.locator('.dg-edge-hit').hover({ force: true });
-    st.shownOnHover = await g.locator('.dg-edge-label').evaluate((t) => getComputedStyle(t).display !== 'none');
+    st.shownOnHover = await p2.evaluate(() => { // 強調 (流れ・クリック) したときに出る
+      const t = document.querySelector('.jh-map-stage .dg-edge-label.is-crowded');
+      t.closest('.dg-edge').classList.add('is-focus');
+      return getComputedStyle(t).display !== 'none';
+    });
   }
   await done();
-  assert.equal(st.labels, 15);
+  assert.equal(st.labels, 25);
   assert.deepEqual(st.issues, [], 'ラベル同士・箱と重ならない');
-  if (st.crowded) assert.ok(st.shownOnHover, '隠したラベルは矢印に触れると出る');
+  assert.ok(st.crowded > 0, '混み合うときは一部のラベルを隠す');
+  assert.ok(st.shownOnHover, '隠したラベルは強調すると出る');
+});
+
+test('自動配置: 1 つの箱に多くの箱がつながる形 (親テーブルと子テーブル 9 つ) は、縦 1 列ではなく複数列に折り返す', async () => {
+  const tables = Array.from({ length: 10 }, (_, i) => ({ id: 'db.t' + i, label: 't' + i, kind: 'table', columns: ['id PK bigint', ...(i ? ['parent_id FK bigint'] : []), 'name varchar'] }));
+  const relations = tables.slice(1).map((t) => ({ from: t.id + '.parent_id', to: 'db.t0.id', card: 'N:1' }));
+  const { p2, done } = await openMap({ nodes: [{ id: 'db', label: 'DB', kind: 'db', children: { nodes: tables, relations } }], drill: true });
+  const st = await p2.evaluate(async () => {
+    JhMap.api.reveal('db');
+    await window.Deck.settled(4000);
+    const xs = new Set([...document.querySelectorAll('.jh-map-stage .er-table[data-id^="db.t"]')].filter((g) => g.getAttribute('data-id') !== 'db.t0')
+      .map((g) => g.querySelector('.dg-shape').getAttribute('x')));
+    const box = document.querySelector('.jh-map-stage .dg-nodes').getBBox();
+    return { columns: xs.size, ratio: box.height / box.width, issues: window.Deck.audit() };
+  });
+  await done();
+  assert.ok(st.columns >= 2, '子テーブルが複数列に並ぶ (' + st.columns + ' 列)');
+  assert.ok(st.ratio < 1.2, '細長くならない (縦 / 横 = ' + st.ratio.toFixed(2) + ')');
+  assert.deepEqual(st.issues, []);
 });

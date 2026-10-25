@@ -4522,24 +4522,60 @@ body.deck-print-mode {
     });
     var ranks = [];
     nodes.forEach(function (n) { (ranks[n._rank] = ranks[n._rank] || []).push(n); });
+    var split = []; // 列ごとの折り返しの数 (1 = 折り返さない)
     function place() {
       var main = 0;
-      ranks.forEach(function (rank) {
+      ranks.forEach(function (rank, ri) {
         if (!rank) return;
-        var size = 0, cross = 0;
-        rank.forEach(function (n) { size = Math.max(size, dir === 'TB' ? n.h : n.w); cross += (dir === 'TB' ? n.w : n.h) + gapCross; });
-        cross -= gapCross;
-        var pos = -cross / 2;
-        rank.forEach(function (n) {
-          if (n._fixed) return;
-          if (dir === 'TB') { n.x = pos; n.y = main + (size - n.h) / 2; pos += n.w + gapCross; }
-          else { n.x = main + (size - n.w) / 2; n.y = pos; pos += n.h + gapCross; }
+        var k = split[ri] || 1;
+        var cols = [];
+        for (var c = 0; c < k; c++) cols.push(rank.filter(function (n, j) { return j % k === c; })); // 上から順に、列をまたいでジグザグに並べる
+        var step = k > 1 ? rank.reduce(function (t, n) { return t + (dir === 'TB' ? n.w : n.h) + gapCross; }, 0) / rank.length / k : 0;
+        cols.forEach(function (col, c) {
+          var size = 0, cross = 0;
+          col.forEach(function (n) { size = Math.max(size, dir === 'TB' ? n.h : n.w); cross += (dir === 'TB' ? n.w : n.h) + gapCross; });
+          cross -= gapCross;
+          // 折り返した列は少しずつずらす (奥の列へ向かう矢印が、手前の列の箱の間を通れるように)
+          var pos = -cross / 2 + (c - (k - 1) / 2) * step;
+          col.forEach(function (n) {
+            if (n._fixed) return;
+            if (dir === 'TB') { n.x = pos; n.y = main + (size - n.h) / 2; pos += n.w + gapCross; }
+            else { n.x = main + (size - n.w) / 2; n.y = pos; pos += n.h + gapCross; }
+          });
+          main += size + (c < k - 1 ? gapCross + 30 : gapMain);
         });
-        main += size + gapMain;
       });
     }
     place();
     reduceCrossings(ranks, es, byId, dir, place);
+    wrapRanks(ranks, split, nodes, dir, place);
+  }
+
+  /**
+   * 縦 (TB なら横) に長すぎる列を、隣り合う複数の列に折り返す。1 つの箱に多くの箱がつながる形 (親テーブルと多くの子テーブルなど) が、
+   * 細長い 1 列になって画面に合わせると小さくなるのを防ぐ。図全体の縦横比 (列の方向の長さ / 並びの方向の長さ) が LR で 1.0 (TB で 2.5) に収まるまで、
+   * 一番長い列を 1 つずつ折り返す。6 個未満の列は折り返さない (小さな図の見た目は変えない)
+   */
+  function wrapRanks(ranks, split, nodes, dir, place) {
+    if (nodes.some(function (n) { return n._fixed; })) return;
+    var ratio = dir === 'TB' ? 2.5 : 1.0, MIN = 6;
+    var cross = function (n) { return dir === 'TB' ? [n.x, n.x + n.w] : [n.y, n.y + n.h]; };
+    for (var iter = 0; iter < 60; iter++) {
+      var b = bounds(nodes), M = dir === 'TB' ? b[3] : b[2], C = dir === 'TB' ? b[2] : b[3];
+      if (C <= ratio * M) return;
+      var pick = -1, longest = 0;
+      ranks.forEach(function (rank, ri) {
+        if (!rank || rank.length < MIN) return;
+        var k = split[ri] || 1;
+        if (Math.ceil(rank.length / (k + 1)) >= Math.ceil(rank.length / k)) return; // 折り返しても短くならない
+        var lo = Infinity, hi = -Infinity;
+        rank.forEach(function (n) { var r = cross(n); lo = Math.min(lo, r[0]); hi = Math.max(hi, r[1]); });
+        if (hi - lo > longest) { longest = hi - lo; pick = ri; }
+      });
+      if (pick < 0 || longest < C * 0.6) return; // 図の長さを決めているのが折り返せる列でなければ、それ以上は変えない
+      split[pick] = (split[pick] || 1) + 1;
+      place();
+    }
   }
 
   /**
@@ -5150,11 +5186,21 @@ body.deck-print-mode {
         });
         list.sort(function (a, c) { return a._order - c._order; });
         var total = list.reduce(function (t, n) { return t + (dir === 'TB' ? n.w : n.h) + gapCross; }, -gapCross);
-        var pos = (dir === 'TB' ? b[0] + b[2] / 2 : b[1] + b[3] / 2) - total / 2;
-        list.forEach(function (n) {
-          if (dir === 'TB') { n.x = pos; n.y = side === 'in' ? b[1] - gap - n.h : b[1] + b[3] + gap; pos += n.w + gapCross; }
-          else { n.y = pos; n.x = side === 'in' ? b[0] - gap - n.w : b[0] + b[2] + gap; pos += n.h + gapCross; }
-        });
+        // 多いときは、中の図の長さ (最低 600) に収まるよう外側へ向かって複数列に折り返す (ずらして、奥の列の矢印が手前の箱の間を通れるように)
+        var room = Math.max(dir === 'TB' ? b[2] : b[3], 600);
+        var k = list.length >= 5 && total > room * 1.1 ? Math.min(Math.ceil(total / room), Math.ceil(list.length / 2)) : 1;
+        var depth = list.reduce(function (m, n) { return Math.max(m, dir === 'TB' ? n.h : n.w); }, 0);
+        var step = k > 1 ? (total + gapCross) / list.length / k : 0;
+        for (var c = 0; c < k; c++) {
+          var col = list.filter(function (n, j) { return j % k === c; });
+          var len = col.reduce(function (t, n) { return t + (dir === 'TB' ? n.w : n.h) + gapCross; }, -gapCross);
+          var pos = (dir === 'TB' ? b[0] + b[2] / 2 : b[1] + b[3] / 2) - len / 2 + (c - (k - 1) / 2) * step;
+          var off = c * (depth + gapCross + 30);
+          col.forEach(function (n) {
+            if (dir === 'TB') { n.x = pos; n.y = side === 'in' ? b[1] - gap - n.h - off : b[1] + b[3] + gap + off; pos += n.w + gapCross; }
+            else { n.y = pos; n.x = side === 'in' ? b[0] - gap - n.w - off : b[0] + b[2] + gap + off; pos += n.h + gapCross; }
+          });
+        }
       });
       // グループ (この階層のノードだけを囲む)
       var groups = (box.groups || []).map(function (g) {
