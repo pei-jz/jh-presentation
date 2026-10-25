@@ -8,7 +8,7 @@
 <meta name="jh-theme" content="default">
 <meta name="jh-brand" content="none">
 <title>EC サイトのシステムマップ (見本)</title>
-<style>@layer engine, theme-base, components, theme; html:not(.map-ready) body { visibility: hidden; }</style>
+<style>@layer engine, theme-base, components, theme; html:not(.map-ready) body { visibility: hidden; } @page { size: A4 landscape; margin: 12mm; }</style>
 </head>
 <body class="jh-mapdoc" data-brand="none">
 <!--
@@ -1005,6 +1005,9 @@
   stroke-width: 8px;
   stroke-linejoin: round;
 }
+/* 置き場所のないラベル (階層マップで矢印が混み合うとき) は隠し、矢印に触れたとき・強調したときに出す */
+.dg-edge-label.is-crowded { display: none; }
+.dg-edge:hover .dg-edge-label.is-crowded, .dg-edge.is-focus .dg-edge-label.is-crowded, .dg-edge.is-current .dg-edge-label.is-crowded { display: inline; }
 .dg-dot { fill: var(--accent); opacity: 0; transition: opacity .3s; }
 .dg-edge.is-flowing .dg-dot { opacity: 1; }
 .dg-edge.is-flowing .dg-edge-hi, .dg-edge.is-focus .dg-edge-hi { opacity: 1; }
@@ -1122,13 +1125,17 @@
 .dg-edge-count circle { fill: var(--bg); stroke: var(--accent); stroke-width: 3; }
 .dg-edge-count text { font-size: 22px; font-weight: 700; fill: var(--accent); text-anchor: middle; dominant-baseline: central; }
 .dg-enter { animation: dg-fade .45s ease both; }
-/* 階層マップの移動: 寄りながら今の図を薄くし、中の図は少し小さい所から、外の図は少し大きい所から現れる */
-.dg.dg-leaving .dg-svg > g { opacity: .15; transition: opacity .5s ease .1s; }
+/* 階層マップの移動: 軽く寄りながら今の図を薄くし、中の図・外の図はほぼ同じ大きさのままフェードで現れる (拡大の威圧感を出さない) */
+.dg.dg-leaving .dg-svg > g { opacity: .25; transition: opacity .3s ease; }
 .dg-enter-in, .dg-enter-out { transform-box: view-box; transform-origin: 50% 50%; }
-.dg-enter-in { animation: dg-fade .45s ease both, dg-zoom-in .45s ease both; }
-.dg-enter-out { animation: dg-fade .45s ease both, dg-zoom-out .45s ease both; }
-@keyframes dg-zoom-in { from { transform: scale(.9); } }
-@keyframes dg-zoom-out { from { transform: scale(1.06); } }
+.dg-enter-in { animation: dg-fade .35s ease-out both, dg-zoom-in .35s ease-out both; }
+.dg-enter-out { animation: dg-fade .35s ease-out both, dg-zoom-out .35s ease-out both; }
+@keyframes dg-zoom-in { from { transform: scale(.98); } }
+@keyframes dg-zoom-out { from { transform: scale(1.02); } }
+@media (prefers-reduced-motion: reduce) {
+  .dg-enter, .dg-enter-in, .dg-enter-out { animation: dg-fade .2s ease both; }
+  .dg.dg-leaving .dg-svg > g { transition: none; }
+}
 
 /* データの流れ: 今の区間を太く、右下に流れのボタン */
 .dg-edge.is-current .dg-edge-hi { stroke-width: 8; }
@@ -1564,7 +1571,7 @@ body.jh-mapdoc {
 .jh-map-title { margin: 0; font-family: var(--font-heading); font-size: 19px; font-weight: 700; color: var(--fg); }
 .jh-map-label { padding: 1px 8px; border: 1px solid var(--accent); border-radius: 999px; font-size: 12px; color: var(--accent); }
 .jh-map-tools { display: flex; align-items: center; gap: 8px; margin-left: auto; }
-.jh-map-btn, .jh-map-data, .jh-map-search input {
+.jh-map-btn, .jh-map-data, .jh-map-theme, .jh-map-search input {
   height: 34px;
   padding: 0 12px;
   border: 1px solid var(--border);
@@ -1576,7 +1583,8 @@ body.jh-mapdoc {
 }
 .jh-map-btn { cursor: pointer; white-space: nowrap; }
 .jh-map-btn:hover { border-color: var(--accent); color: var(--accent); }
-.jh-map-toc-toggle { display: none; }
+.jh-map-toc-toggle { padding: 0 10px; font-size: 16px; }
+.jh-map-theme { max-width: 190px; }
 .jh-map-search { position: relative; }
 .jh-map-search input { width: 240px; }
 .jh-map-search input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
@@ -1614,13 +1622,55 @@ body.jh-mapdoc {
 .jh-map-noresult { padding: 8px 10px; color: var(--muted); }
 
 /* ---- 目次と図 ---------------------------------------------------------- */
-.jh-map-main { display: grid; grid-template-columns: 260px 1fr; min-height: 0; }
-.jh-map-toc { overflow: auto; padding: 12px 8px; border-right: 1px solid var(--border); background: var(--surface); }
+.jh-map-main { display: grid; grid-template-columns: 260px 1fr; min-height: 0; transition: grid-template-columns .2s ease; }
+.jh-map-toc { overflow: auto; padding: 8px 8px 12px; border-right: 1px solid var(--border); background: var(--surface); }
+/* 広い画面で ☰ を押すと目次を畳む (状態は保存される) */
+body.jh-toc-collapsed .jh-map-main { grid-template-columns: 0 1fr; }
+body.jh-toc-collapsed .jh-map-toc { visibility: hidden; padding: 0; border: 0; }
 .jh-map-toc ul { margin: 0; padding: 0; list-style: none; }
+.jh-map-toc li { position: relative; }
+.jh-map-toc li[hidden] { display: none; }
+.jh-toc-tools { display: flex; justify-content: flex-end; gap: 4px; margin: 0 0 6px; }
+.jh-toc-tool {
+  padding: 2px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--muted);
+  background: none;
+  cursor: pointer;
+}
+.jh-toc-tool:hover { border-color: var(--border); color: var(--accent); }
+/* 枝の開閉 (三角)。字下げの余白の中に置く */
+.jh-toc-twisty {
+  position: absolute;
+  top: 3px;
+  left: calc(var(--depth, 0) * 16px - 8px);
+  z-index: 1;
+  width: 20px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  color: var(--muted);
+  background: none;
+  cursor: pointer;
+}
+.jh-toc-twisty::before {
+  content: "";
+  display: inline-block;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-left: 7px solid currentColor;
+  transition: transform .15s;
+}
+.jh-toc-twisty[aria-expanded="true"]::before { transform: rotate(90deg); }
+.jh-toc-twisty:hover { color: var(--accent); background: var(--accent-soft); }
 .jh-toc-item {
   display: block;
   width: 100%;
-  padding: 5px 10px 5px calc(10px + var(--depth, 0) * 16px);
+  padding: 5px 10px 5px calc(14px + var(--depth, 0) * 16px);
   border: 0;
   border-radius: 6px;
   font: inherit;
@@ -1674,7 +1724,8 @@ body.jh-mapdoc {
   .jh-map-main { grid-template-columns: 1fr; }
   .jh-map-toc { position: fixed; top: 0; bottom: 0; left: 0; z-index: 30; width: 260px; transform: translateX(-100%); visibility: hidden; transition: transform .2s, visibility .2s; }
   body.jh-toc-open .jh-map-toc { transform: none; visibility: visible; box-shadow: 8px 0 24px rgba(0, 0, 0, .18); }
-  .jh-map-toc-toggle { display: inline-block; }
+  body.jh-toc-collapsed .jh-map-main { grid-template-columns: 1fr; }
+  body.jh-toc-collapsed .jh-map-toc { padding: 8px 8px 12px; border-right: 1px solid var(--border); }
   .jh-map-head { flex-wrap: wrap; gap: 8px 10px; padding: 8px 12px; }
   .jh-map-title { flex: 1; min-width: 0; font-size: 16px; }
   .jh-map-tools { width: 100%; margin-left: 0; }
@@ -1682,11 +1733,12 @@ body.jh-mapdoc {
   .jh-map-search input { width: 100%; box-sizing: border-box; }
   .jh-map-results { left: 0; width: auto; }
   .jh-map-data { max-width: 40%; }
+  .jh-map-theme { max-width: 30%; }
   .jh-mapdoc .dg-panel { width: 100%; top: auto; height: 55%; border-width: 1px 0 0; }
 }
 
-/* ---- 印刷 (?print): 階層ごとに 1 ページ ------------------------------------ */
-@page { size: A4 landscape; margin: 12mm; }
+/* ---- 印刷 (?print・印刷ボタン・Ctrl+P): 階層ごとに 1 ページ ----------------------
+ * @page は @layer の中に書けないので mapfile.mjs が <head> に置く (A4 横) */
 body.jh-map-printing { display: block; height: auto; overflow: visible; }
 body.jh-map-printing .jh-map-main { display: none; }
 .jh-map-print { padding: 0 18px; }
@@ -1705,6 +1757,7 @@ body.jh-map-printing .jh-map-main { display: none; }
 .jh-print-more { display: block; font-size: 11px; font-weight: 400; color: var(--muted); }
 @media print {
   .jh-map-head { border: 0; background: none; }
+  .jh-map-tools, .jh-map-toc-toggle { display: none; }
 }
 .jh-mapdoc .dg-panel .table { font-size: 13px; }
 .jh-mapdoc .dg-panel .table th, .jh-mapdoc .dg-panel .table td { padding: 4px 6px; border-bottom-width: 1px; }
@@ -1828,6 +1881,289 @@ body.jh-map-printing .jh-map-main { display: none; }
 
 }
 </style>
+<style data-jh-theme="default" data-label="スタンダード">
+
+</style>
+<style data-jh-theme="corporate" data-label="コーポレート" media="not all">
+@layer theme {
+/* @theme corporate
+ * @label コーポレート
+ * @description 紺とゴールドの落ち着いたデザイン。角ばった端正なレイアウト。報告・提案などフォーマルな場向け
+ * @tags 落ち着いた, フォーマル, 報告, 提案
+ */
+
+/* default.css の後に重ねて読み込む */
+:root {
+  --bg: #ffffff;
+  --fg: #1c2636;
+  --muted: #64708a;
+  --surface: #f3f5f9;
+  --surface-2: #e6eaf1;
+  --border: #d3d9e4;
+  --accent: #1f3a68;
+  --accent-2: #3f6fb0;
+  --accent-3: #b8902f;
+  --accent-soft: rgba(31, 58, 104, .08);
+  --on-accent: #ffffff;
+  --emph-bg: rgba(184, 144, 47, .25);
+  --radius: 4px;
+  --pad-x: 128px;
+}
+
+/* タイトル帯: 全幅の紺の下線 + 左に金の短い線 */
+.slide > h2:first-child,
+.slide > .slide-title {
+  padding-left: 28px;
+  border-bottom: 2px solid var(--accent);
+}
+.slide > h2:first-child::after,
+.slide > .slide-title::after {
+  left: 0;
+  top: 6px;
+  bottom: 26px;
+  width: 8px;
+  height: auto;
+  background: var(--accent-3);
+}
+
+/* 表紙: 左側に紺のパネル */
+.layout-title {
+  padding-left: 760px;
+  background: linear-gradient(90deg, var(--accent) 0 640px, var(--bg) 640px);
+}
+.layout-title::before {
+  left: 640px;
+  top: 0;
+  width: 14px;
+  height: 100%;
+  transform: none;
+  border-radius: 0;
+  background: var(--accent-3);
+}
+.layout-title h1 { font-size: 92px; }
+.layout-title .eyebrow { color: var(--accent-3); }
+.layout-title .meta { padding-top: 32px; border-top: 2px solid var(--border); }
+
+/* セクション扉: 紺のベタ + 金の線 */
+.layout-section {
+  background: var(--accent);
+  box-shadow: inset 0 -24px 0 var(--accent-3);
+}
+.layout-section .section-no { color: var(--accent-3); opacity: 1; }
+
+/* 結び */
+.layout-end {
+  color: var(--on-accent);
+  background: var(--accent);
+}
+.layout-end .muted { color: rgba(255, 255, 255, .7); }
+
+.card { border-width: 1px; border-top: 6px solid var(--accent); }
+.card.is-accent { border-color: var(--accent); }
+.callout { border-left-width: 8px; border-radius: 2px; }
+.badge { border-radius: 2px; }
+.btn { border-radius: 4px; }
+
+/* ブランド枠: 紺背景の結びでは白文字 */
+.deck-brand-holder.on-layout-end .deck-brand { color: rgba(255, 255, 255, .85); }
+.deck-brand-footer { border-top-color: var(--accent); }
+
+}
+</style>
+<style data-jh-theme="dark" data-label="ダーク" media="not all">
+@layer theme {
+/* @theme dark
+ * @label ダーク
+ * @description 濃紺の背景に明るい青。コードやデモが映える。技術系の発表向け
+ * @tags 技術, エンジニア向け, コード, 暗い
+ */
+
+/* default.css の後に重ねて読み込む (変数の上書きのみ) */
+:root {
+  --bg: #0f131c;
+  --fg: #e8ebf2;
+  --muted: #8b93a7;
+  --surface: #181e2b;
+  --surface-2: #222a3a;
+  --border: #2d3648;
+  --accent: #60a5fa;
+  --accent-2: #2dd4bf;
+  --accent-3: #fbbf24;
+  --danger: #f87171;
+  --success: #4ade80;
+  --accent-soft: rgba(96, 165, 250, .14);
+  --on-accent: #0b1220;
+  --emph-bg: rgba(250, 204, 21, .22);
+  --code-bg: #0a0d14;
+}
+
+.layout-section { color: #fff; background: linear-gradient(135deg, #1d4ed8, #0f766e); }
+
+.deck-brand-label { border-color: var(--accent-3); color: var(--accent-3); }
+
+}
+</style>
+<style data-jh-theme="mono" data-label="モノクロ" media="not all">
+@layer theme {
+/* @theme mono
+ * @label モノクロ
+ * @description 白黒に赤一色のミニマルなデザイン。見出しは明朝体。文字・メッセージを主役にしたい発表向け
+ * @tags ミニマル, シンプル, 文字中心, 上品
+ */
+
+/* default.css の後に重ねて読み込む */
+:root {
+  --bg: #ffffff;
+  --fg: #111111;
+  --muted: #6b6b6b;
+  --surface: #f5f5f5;
+  --surface-2: #ebebeb;
+  --border: #dddddd;
+  --accent: #111111;
+  --accent-2: #555555;
+  --accent-3: #d7263d;
+  --accent-soft: rgba(0, 0, 0, .05);
+  --on-accent: #ffffff;
+  --emph-bg: rgba(215, 38, 61, .14);
+  --code-bg: #161616;
+  --radius: 0px;
+  --font-heading: "BIZ UDPMincho", "Yu Mincho", "YuMincho", "Hiragino Mincho ProN", "Noto Serif JP", serif;
+}
+
+:where(.slide) strong { color: var(--accent-3); }
+:where(.slide) li::marker { color: var(--accent-3); }
+
+/* タイトル帯: 細い黒線のみ */
+.slide > h2:first-child,
+.slide > .slide-title {
+  font-weight: 600;
+  border-bottom: 1px solid var(--fg);
+}
+.slide > h2:first-child::after,
+.slide > .slide-title::after {
+  width: 64px;
+  height: 4px;
+  bottom: -2px;
+  background: var(--accent-3);
+}
+
+/* 表紙: 装飾なし・大きな明朝 */
+.layout-title { background: var(--bg); padding-left: 160px; }
+.layout-title::before {
+  left: 160px;
+  top: auto;
+  bottom: 220px;
+  width: 120px;
+  height: 6px;
+  transform: none;
+  border-radius: 0;
+  background: var(--accent-3);
+}
+.layout-title h1 { font-size: 112px; font-weight: 600; }
+.layout-title .eyebrow { color: var(--muted); }
+
+/* セクション扉: 黒 */
+.layout-section { background: #111; }
+.layout-section .section-no { color: var(--accent-3); opacity: 1; }
+.layout-section h2 { font-weight: 600; }
+
+.layout-end { background: var(--bg); }
+.layout-end h1 { font-weight: 600; }
+
+.card { border: 1px solid var(--fg); background: var(--bg); }
+.card.is-accent { border: 2px solid var(--accent-3); background: var(--bg); }
+.callout { background: var(--surface); border-left: 4px solid var(--accent-3); }
+.badge { background: var(--fg); }
+.flow > * { border-width: 2px; border-color: var(--fg); }
+.flow > * + *::before { border-left-color: var(--fg); }
+.timeline > li::before { border-color: var(--fg); }
+.timeline > li.is-done::before { background: var(--accent-3); border-color: var(--accent-3); }
+.stat-value { color: var(--fg); font-family: var(--font-heading); font-weight: 600; }
+.deck-progress { background: var(--accent-3); }
+
+/* ブランド枠 */
+.deck-brand { color: var(--fg); font-weight: 400; letter-spacing: .04em; }
+.deck-brand-label { border-color: var(--accent-3); color: var(--accent-3); border-radius: 0; }
+
+}
+</style>
+<style data-jh-theme="pop" data-label="ポップ" media="not all">
+@layer theme {
+/* @theme pop
+ * @label ポップ
+ * @description クリーム地にコーラルと黄色の明るいデザイン。丸みがあって親しみやすい。LT・カジュアルな発表向け
+ * @tags 明るい, 親しみやすい, LT, カジュアル
+ */
+
+/* default.css の後に重ねて読み込む */
+:root {
+  --bg: #fffaf2;
+  --fg: #3a2e2a;
+  --muted: #8a7a72;
+  --surface: #fff1e0;
+  --surface-2: #ffe6cc;
+  --border: #f1dcc4;
+  --accent: #f0563a;
+  --accent-2: #2a9d8f;
+  --accent-3: #f4a91c;
+  --success: #2a9d8f;
+  --accent-soft: rgba(240, 86, 58, .10);
+  --on-accent: #ffffff;
+  --emph-bg: rgba(244, 169, 28, .35);
+  --code-bg: #2b2220;
+  --radius: 28px;
+  --font-heading: "BIZ UDPGothic", "Yu Gothic UI", "Meiryo", sans-serif;
+}
+
+/* タイトル帯: 蛍光ペン風の下線 */
+.slide > h2:first-child,
+.slide > .slide-title {
+  align-self: flex-start;
+  padding-bottom: 0;
+  border-bottom: 0;
+  background: linear-gradient(transparent 62%, rgba(244, 169, 28, .45) 62%);
+}
+.slide > h2:first-child::after,
+.slide > .slide-title::after { display: none; }
+
+/* 表紙: 丸い図形 */
+.layout-title {
+  background:
+    radial-gradient(circle at 86% 22%, var(--accent-3) 0 150px, transparent 151px),
+    radial-gradient(circle at 74% 78%, var(--accent) 0 210px, transparent 211px),
+    radial-gradient(circle at 94% 62%, var(--accent-2) 0 70px, transparent 71px),
+    var(--bg);
+}
+.layout-title::before {
+  width: 24px;
+  height: 24px;
+  top: auto;
+  bottom: 140px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 40px 0 0 var(--accent-3), 80px 0 0 var(--accent-2);
+}
+.layout-title h1 { max-width: 1100px; }
+
+/* セクション扉: コーラル → 黄色 */
+.layout-section {
+  background:
+    radial-gradient(circle at 90% 80%, rgba(255, 255, 255, .18) 0 260px, transparent 261px),
+    linear-gradient(120deg, var(--accent), var(--accent-3));
+}
+
+.card { border: 0; box-shadow: 0 10px 30px rgba(120, 70, 40, .12); background: #fff; }
+.card.is-accent { background: var(--surface); box-shadow: 0 0 0 4px var(--accent); }
+.callout { border-left: 0; border-radius: var(--radius); box-shadow: inset 12px 0 0 var(--accent); }
+.flow > * { border-width: 4px; }
+.stat-value { color: var(--accent); }
+
+/* ブランド枠: 表紙右上の図形と重ならないよう左上に */
+.deck-brand-cover { left: 160px; right: auto; }
+.deck-brand-header, .deck-brand-footer { border: 0; }
+
+}
+</style>
 <!-- /jh:theme-style -->
 <!-- jh:brand -->
 <script type="application/json" id="jh-brand">{"name":"Sample","label":"SAMPLE","logo":"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjAgMTIwIiB3aWR0aD0iMTIwIiBoZWlnaHQ9IjEyMCI+CiAgPHJlY3QgeD0iNCIgeT0iNCIgd2lkdGg9IjExMiIgaGVpZ2h0PSIxMTIiIHJ4PSIyNiIgZmlsbD0iIzI1NjNlYiIvPgogIDxjaXJjbGUgY3g9Ijg0IiBjeT0iMzYiIHI9IjE0IiBmaWxsPSIjZjU5ZTBiIi8+CiAgPHRleHQgeD0iNTYiIHk9Ijg4IiBmb250LWZhbWlseT0iU2Vnb2UgVUksIEFyaWFsLCBzYW5zLXNlcmlmIiBmb250LXNpemU9IjY2IiBmb250LXdlaWdodD0iNzAwIiBmaWxsPSIjZmZmZmZmIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5TPC90ZXh0Pgo8L3N2Zz4K"}</script>
@@ -1837,8 +2173,9 @@ body.jh-map-printing .jh-map-main { display: none; }
 /*!
  * マップ文書のビューア (依存なし)
  *   スライドなしで、階層マップ (.diagram) を画面いっぱいに表示し、全体から細部へたどって読む。
- *   - 左: 目次 (ノードの階層)。クリックでその階層へ
- *   - 上: 検索 (名前・説明・タグ)、データでの絞り込み、印刷
+ *   - 左: 目次 (ノードの階層)。クリックでその階層へ。☰ で目次ごと畳む、三角で枝ごとに開閉 (ノードが多ければ深い枝は閉じておく)
+ *   - 上: 検索 (名前・説明・タグ)、データでの絞り込み、テーマの切り替え (埋め込んだ候補から)、印刷
+ *   - 印刷: 印刷ボタン・Ctrl+P のどちらでも、印刷の間だけ ?print と同じ並び (階層ごとに 1 ページ) に組み替える
  *   - URL: #/<階層>/<選んだノード>。ブラウザの戻る・進むで階層を行き来でき、リンクで共有できる
  *   - ?print: 階層ごとに 1 ページ (図 + その階層の部品の説明) を並べた印刷用の表示
  *   - JhMap.audit() (= Deck.audit()): データの誤り・1 階層のノード数・文字の重なりを検査する
@@ -1849,6 +2186,11 @@ body.jh-map-printing .jh-map-main { display: none; }
   'use strict';
 
   var PRINT = /[?&]print\b/.test(location.search);
+  var store = {
+    get: function (k) { try { return localStorage.getItem('jh-map:' + k); } catch (e) { return null; } },
+    set: function (k, v) { try { if (v == null) localStorage.removeItem('jh-map:' + k); else localStorage.setItem('jh-map:' + k, v); } catch (e) { /* 保存できなくても表示は続ける */ } },
+  };
+  var WIDE = '(min-width: 861px)'; // これより狭いと目次は引き出し (mapdoc.css と合わせる)
   var tracked = [], auditors = [];
   var quiet = false; // 検査中は URL・目次を動かさない
 
@@ -1914,12 +2256,13 @@ body.jh-map-printing .jh-map-main { display: none; }
   };
 
   function start() {
+    applyTheme(initialTheme());
     var api = container.jhDiagram;
     if (!api) { document.documentElement.classList.add('map-ready'); return; }
     buildHead(api);
     buildToc(api);
     if (PRINT) buildPrint(api);
-    else { bindUrl(api); bindHost(); }
+    else { bindUrl(api); bindHost(); bindPrint(api); }
     document.documentElement.classList.add('map-ready');
   }
 
@@ -1962,8 +2305,23 @@ body.jh-map-printing .jh-map-main { display: none; }
     var showBrand = document.body.getAttribute('data-brand') && document.body.getAttribute('data-brand') !== 'none';
     var tocBtn = h('button', 'jh-map-btn jh-map-toc-toggle', head, '☰');
     tocBtn.type = 'button';
-    tocBtn.setAttribute('aria-label', '目次を開く');
-    tocBtn.addEventListener('click', function () { document.body.classList.toggle('jh-toc-open'); });
+    tocBtn.title = '目次の表示・非表示';
+    tocBtn.setAttribute('aria-label', '目次の表示・非表示');
+    // 広い画面: 目次を畳む / 出す (状態を保存)。狭い画面: 引き出しを開く / 閉じる
+    if (store.get('toc') === 'closed') document.body.classList.add('jh-toc-collapsed');
+    function tocState() {
+      var shown = matchMedia(WIDE).matches ? !document.body.classList.contains('jh-toc-collapsed') : document.body.classList.contains('jh-toc-open');
+      tocBtn.setAttribute('aria-expanded', String(shown));
+    }
+    tocBtn.addEventListener('click', function () {
+      if (matchMedia(WIDE).matches) {
+        store.set('toc', document.body.classList.toggle('jh-toc-collapsed') ? 'closed' : null);
+      } else {
+        document.body.classList.toggle('jh-toc-open');
+      }
+      tocState();
+    });
+    tocState();
     if (showBrand && (brand.logo || brand.name)) {
       var b = h('div', 'jh-map-brand', head);
       if (brand.logo) { var img = h('img', null, b); img.src = brand.logo; img.alt = brand.name || ''; }
@@ -2024,36 +2382,122 @@ body.jh-map-printing .jh-map-main { display: none; }
       names.forEach(function (n) { h('option', null, sel, n).value = n; });
       sel.addEventListener('change', function () { api.showData(sel.value); });
     }
+    var themes = themeStyles();
+    if (themes.length > 1) {
+      var tsel = h('select', 'jh-map-theme', tools);
+      tsel.setAttribute('aria-label', 'テーマ');
+      tsel.title = 'テーマ';
+      themes.forEach(function (st) {
+        h('option', null, tsel, 'テーマ: ' + st.getAttribute('data-label')).value = st.getAttribute('data-jh-theme');
+      });
+      tsel.value = currentTheme();
+      tsel.addEventListener('change', function () {
+        applyTheme(tsel.value);
+        store.set('theme:' + location.pathname, tsel.value === docTheme() ? null : tsel.value);
+      });
+    }
     var printBtn = h('button', 'jh-map-btn', tools, '印刷');
     printBtn.type = 'button';
-    printBtn.addEventListener('click', function () { window.open(location.pathname + '?print&autoprint', '_blank'); });
+    // 別のタブを開かずに、この画面のまま印刷する (ポップアップの禁止・エディタの iframe の中でも動くように)。並びは beforeprint で組み替える
+    printBtn.addEventListener('click', function () { window.print(); });
   }
 
   // ---- 目次 ----
+  //   ノードの階層を字下げで並べる。中身のある箱は三角で枝ごとに開閉できる。
+  //   ノードが多い (OPEN_ALL 個を超える) ときは、一番上の階層の箱の子までを開き、それより深い枝は閉じておく。
+  //   今いる階層・選んだノードの枝は自動で開く
+  var OPEN_ALL = 40;
   function buildToc(api) {
+    var tools = h('div', 'jh-toc-tools', toc);
     var ul = h('ul', null, toc);
-    var items = {};
+    var items = {}, rows = [], closed = {};
+    var nodes = api.nodes();
+    var parentOf = {};
+    nodes.forEach(function (n) { parentOf[n.id] = n.parent; });
+    function ancestors(id) {
+      var out = [];
+      for (var p = parentOf[id]; p != null && p !== ''; p = parentOf[p]) out.push(p);
+      return out;
+    }
     function item(id, label, depth, hasKids) {
-      var li = h('li', null, ul);
+      var li = h('li', null, ul), tw = null;
+      li.style.setProperty('--depth', depth);
+      if (hasKids && id !== '') {
+        tw = h('button', 'jh-toc-twisty', li);
+        tw.type = 'button';
+        tw.addEventListener('click', function () { closed[id] = !closed[id]; render(); });
+      }
       var b = h('button', 'jh-toc-item' + (hasKids ? ' has-kids' : ''), li, label);
       b.type = 'button';
       b.style.setProperty('--depth', depth);
       b.setAttribute('data-id', id);
       b.addEventListener('click', function () { document.body.classList.remove('jh-toc-open'); api.reveal(id); });
       items[id] = b;
+      rows.push({ id: id, li: li, tw: tw, anc: id === '' ? [] : ancestors(id) });
     }
     item('', api.title, 0, true);
-    api.nodes().forEach(function (n) { item(n.id, n.label, n.depth + 1, n.hasKids); });
-    function mark(level, sel) {
-      Object.keys(items).forEach(function (id) {
-        items[id].classList.toggle('is-current', id === level);
-        items[id].classList.toggle('is-selected', id === sel);
+    nodes.forEach(function (n) {
+      item(n.id, n.label, n.depth + 1, n.hasKids);
+      if (n.hasKids && nodes.length > OPEN_ALL && n.depth >= 1) closed[n.id] = true;
+    });
+    function render() {
+      rows.forEach(function (r) {
+        r.li.hidden = r.anc.some(function (a) { return closed[a]; });
+        if (r.tw) {
+          r.tw.setAttribute('aria-expanded', String(!closed[r.id]));
+          r.tw.setAttribute('aria-label', (closed[r.id] ? '開く: ' : '閉じる: ') + items[r.id].textContent);
+        }
       });
-      var on = items[sel] || items[level];
+    }
+    [['すべて開く', true], ['すべて閉じる', false]].forEach(function (t) {
+      var b = h('button', 'jh-toc-tool', tools, t[0]);
+      b.type = 'button';
+      b.addEventListener('click', function () {
+        rows.forEach(function (r) { if (r.tw) closed[r.id] = !t[1]; });
+        reopen();
+        render();
+      });
+    });
+    var level = '', sel = null;
+    /** 今いる階層・選んだノードが見えるように、その枝を開く */
+    function reopen() {
+      [level, sel].forEach(function (id) { if (id) ancestors(id).forEach(function (a) { closed[a] = false; }); });
+    }
+    function mark(lv, s2) {
+      level = lv; sel = s2;
+      reopen();
+      render();
+      Object.keys(items).forEach(function (id) {
+        items[id].classList.toggle('is-current', id === lv);
+        items[id].classList.toggle('is-selected', id === s2);
+      });
+      var on = items[s2] || items[lv];
       if (on && on.scrollIntoView && !PRINT) on.scrollIntoView({ block: 'nearest' });
     }
     container.addEventListener('dg:change', function (ev) { if (!quiet) mark(ev.detail.level, ev.detail.selected); });
     mark(api.level(), api.selected());
+  }
+
+  // ---- テーマ (mapfile.mjs が候補を <style data-jh-theme> として埋め込む。使わないものは media="not all") ----
+  function themeStyles() { return Array.prototype.slice.call(document.querySelectorAll('style[data-jh-theme]')); }
+  function docTheme() { var m = document.querySelector('meta[name="jh-theme"]'); return m ? m.content : 'default'; }
+  function currentTheme() {
+    var on = themeStyles().filter(function (st) { return st.media !== 'not all'; })[0];
+    return on ? on.getAttribute('data-jh-theme') : docTheme();
+  }
+  /** ?theme=<名前> > 保存した選択 > 文書のテーマ (?print (PDF 出力) では保存した選択を使わない) */
+  function initialTheme() {
+    var m = location.search.match(/[?&]theme=([\w-]+)/);
+    if (m) return m[1];
+    return (!PRINT && store.get('theme:' + location.pathname)) || docTheme();
+  }
+  function applyTheme(name) {
+    var list = themeStyles();
+    if (!list.some(function (st) { return st.getAttribute('data-jh-theme') === name; })) return;
+    list.forEach(function (st) {
+      if (st.getAttribute('data-jh-theme') === name) st.removeAttribute('media');
+      else st.media = 'not all';
+    });
   }
 
   // ---- URL (#/<階層>/<選んだノード>) ----
@@ -2084,7 +2528,7 @@ body.jh-map-printing .jh-map-main { display: none; }
     apply();
   }
 
-  // ---- 印刷: 階層ごとに 1 ページ ----
+  // ---- 印刷: 階層ごとに 1 ページ (?print では最初から、通常の画面では印刷の間だけ) ----
   function buildPrint(api) {
     document.body.classList.add('jh-map-printing');
     var pages = h('div', 'jh-map-print', null);
@@ -2097,6 +2541,8 @@ body.jh-map-printing .jh-map-main { display: none; }
       var fig = h('div', 'jh-print-fig dg is-drill', page); // 図の部品の見た目 (.dg.is-drill …) をそのまま使う
       var svg = api.svg.cloneNode(true);
       svg.removeAttribute('id');
+      // 通常の画面から印刷するときは、画面用のヒント (クリックで中へ) を紙の言い方にする (?print では最初からこの言い方)
+      svg.querySelectorAll('text.dg-hint').forEach(function (t) { t.textContent = '中身は後のページ'; });
       fig.appendChild(svg);
       var kids = nodes.filter(function (n) { return n.parent === p; });
       var rows = kids.filter(function (n) { return n.sub || n.detail || n.hasKids || (n.columns && n.columns.length); });
@@ -2117,6 +2563,27 @@ body.jh-map-printing .jh-map-main { display: none; }
     });
     api.drawLevel('');
     if (/[?&]autoprint\b/.test(location.search)) setTimeout(function () { window.print(); }, 300);
+    return pages;
+  }
+
+  /** 通常の画面での印刷 (印刷ボタン・Ctrl+P): 印刷の間だけ階層ごとのページに組み替え、終わったら元の階層・選択に戻す */
+  function bindPrint(api) {
+    var pages = null, keepLevel, keepSel;
+    window.addEventListener('beforeprint', function () {
+      if (pages) return;
+      keepLevel = api.level(); keepSel = api.selected();
+      quiet = true;
+      try { pages = buildPrint(api); } finally { quiet = false; }
+    });
+    window.addEventListener('afterprint', function () {
+      if (!pages) return;
+      pages.remove();
+      pages = null;
+      document.body.classList.remove('jh-map-printing');
+      quiet = true;
+      try { api.drawLevel(keepLevel); } finally { quiet = false; }
+      if (keepSel) api.reveal(keepSel);
+    });
   }
 
   // ---- 検査 ----
@@ -2189,8 +2656,11 @@ body.jh-map-printing .jh-map-main { display: none; }
   var IS_PRINT = Deck && Deck.mode === 'print';
   var instances = [];
   var dataIssues = []; // 図のデータの誤り (Deck.audit() で報告する)
-  var DRILL_ZOOM = 2.2;
-  var TABLE_ROWS = 10; // 階層マップのテーブルの箱に出す列の数 (超えた分は「ほか N 列」。全部は詳細パネルに出す) // 階層マップで中へ入る・外へ出るときに、カメラが寄る倍率の上限
+  // 階層マップで中へ入る・外へ出るときに、カメラが寄る倍率の上限と時間。大きく速く寄ると威圧感があるので、軽く寄ってクロスフェードで見せる
+  var DRILL_ZOOM = 1.35;
+  var DRILL_MS = 380;
+  var REDUCED_MOTION = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  var TABLE_ROWS = 10; // 階層マップのテーブルの箱に出す列の数 (超えた分は「ほか N 列」。全部は詳細パネルに出す)
 
   // ------------------------------------------------------------------
   // 共通ユーティリティ
@@ -2296,7 +2766,7 @@ body.jh-map-printing .jh-map-main { display: none; }
     cancelAnimationFrame(this.raf);
     if (this.done) { this.done(); this.done = null; } // 途中で止めた移動も完了扱いにする (settled が待ち続けないように)
     if (!animate || IS_PRINT) { this.apply(target.slice()); return Promise.resolve(); }
-    var from = this.vb.slice(), start = null, dur = 650;
+    var from = this.vb.slice(), start = null, dur = typeof animate === 'number' ? animate : 650; // animate に数値を渡すとその時間 (ms)
     return track(new Promise(function (resolve) {
       self.done = resolve;
       function frame(t) {
@@ -2474,20 +2944,79 @@ body.jh-map-printing .jh-map-main { display: none; }
     });
     var ranks = [];
     nodes.forEach(function (n) { (ranks[n._rank] = ranks[n._rank] || []).push(n); });
-    var main = 0;
-    ranks.forEach(function (rank) {
-      if (!rank) return;
-      var size = 0, cross = 0;
-      rank.forEach(function (n) { size = Math.max(size, dir === 'TB' ? n.h : n.w); cross += (dir === 'TB' ? n.w : n.h) + gapCross; });
-      cross -= gapCross;
-      var pos = -cross / 2;
-      rank.forEach(function (n) {
-        if (n._fixed) return;
-        if (dir === 'TB') { n.x = pos; n.y = main + (size - n.h) / 2; pos += n.w + gapCross; }
-        else { n.x = main + (size - n.w) / 2; n.y = pos; pos += n.h + gapCross; }
+    function place() {
+      var main = 0;
+      ranks.forEach(function (rank) {
+        if (!rank) return;
+        var size = 0, cross = 0;
+        rank.forEach(function (n) { size = Math.max(size, dir === 'TB' ? n.h : n.w); cross += (dir === 'TB' ? n.w : n.h) + gapCross; });
+        cross -= gapCross;
+        var pos = -cross / 2;
+        rank.forEach(function (n) {
+          if (n._fixed) return;
+          if (dir === 'TB') { n.x = pos; n.y = main + (size - n.h) / 2; pos += n.w + gapCross; }
+          else { n.x = main + (size - n.w) / 2; n.y = pos; pos += n.h + gapCross; }
+        });
+        main += size + gapMain;
       });
-      main += size + gapMain;
+    }
+    place();
+    reduceCrossings(ranks, es, byId, dir, place);
+  }
+
+  /**
+   * 矢印の交差を減らす: 各列のノードを、つながる相手の位置の平均 (重心) の順に並べ替えることを数回繰り返し、
+   * 交差が一番少なかった並びを使う。元の並び (書いた順) より減らないときは元のまま (小さな図の見た目を変えない)
+   */
+  function reduceCrossings(ranks, es, byId, dir, place) {
+    if (es.length < 3 || ranks.some(function (r) { return r && r.some(function (n) { return n._fixed; }); })) return;
+    var c = function (n) { return dir === 'TB' ? n.x + n.w / 2 : n.y + n.h / 2; };
+    var m = function (n) { return dir === 'TB' ? n.y + n.h / 2 : n.x + n.w / 2; };
+    function crossings() {
+      var segs = es.map(function (e) { var a = byId[e.from], b = byId[e.to]; return [a, b, m(a), c(a), m(b), c(b)]; });
+      var count = 0;
+      for (var i = 0; i < segs.length; i++) {
+        for (var j = i + 1; j < segs.length; j++) {
+          var A = segs[i], B = segs[j];
+          if (A[0] === B[0] || A[0] === B[1] || A[1] === B[0] || A[1] === B[1]) continue;
+          if (segCross(A[2], A[3], A[4], A[5], B[2], B[3], B[4], B[5])) count++;
+        }
+      }
+      return count;
+    }
+    var neighbors = {};
+    es.forEach(function (e) {
+      (neighbors[e.from] = neighbors[e.from] || []).push(byId[e.to]);
+      (neighbors[e.to] = neighbors[e.to] || []).push(byId[e.from]);
     });
+    var snapshot = function () { return ranks.map(function (r) { return r ? r.slice() : r; }); };
+    var best = snapshot(), bestCount = crossings();
+    for (var iter = 0; iter < 8 && bestCount > 0; iter++) {
+      var order = ranks.map(function (r, i) { return i; });
+      if (iter % 2) order.reverse();
+      order.forEach(function (i) {
+        var rank = ranks[i];
+        if (!rank || rank.length < 2) return;
+        var key = {};
+        rank.forEach(function (n, k) {
+          var ns = neighbors[n.id] || [];
+          key[n.id] = ns.length ? ns.reduce(function (t, x) { return t + c(x); }, 0) / ns.length : c(n);
+          key[n.id] += k * 1e-6; // 同じ値なら今の順
+        });
+        rank.sort(function (a, b) { return key[a.id] - key[b.id]; });
+        place();
+      });
+      var now = crossings();
+      if (now < bestCount) { bestCount = now; best = snapshot(); }
+    }
+    best.forEach(function (r, i) { ranks[i] = r; });
+    place();
+  }
+  /** 線分 (x1,y1)-(x2,y2) と (x3,y3)-(x4,y4) が交わるか (端の接触は含めない) */
+  function segCross(x1, y1, x2, y2, x3, y3, x4, y4) {
+    function side(ax, ay, bx, by, cx, cy) { var v = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax); return v > 1e-9 ? 1 : v < -1e-9 ? -1 : 0; }
+    var d1 = side(x3, y3, x4, y4, x1, y1), d2 = side(x3, y3, x4, y4, x2, y2), d3 = side(x1, y1, x2, y2, x3, y3), d4 = side(x1, y1, x2, y2, x4, y4);
+    return d1 * d2 < 0 && d3 * d4 < 0;
   }
 
   function bounds(items) {
@@ -2694,6 +3223,47 @@ body.jh-map-printing .jh-map-main { display: none; }
         ct.textContent = e.count;
       }
     });
+    if (obstacles) placeLabels(layer, obstacles);
+  }
+
+  /**
+   * 矢印のラベルを、箱・本数の丸・他のラベルと重ならない位置に置く (矢印の中ほどから端へ向かって候補を試す)。
+   * どこにも置けないラベルは隠し (.is-crowded)、矢印に触れたとき・強調したときに出す。
+   * 中身は矢印のクリックで出る一覧 (まとめた元の矢印) で読める
+   */
+  function placeLabels(layer, obstacles) {
+    var taken = obstacles.map(function (n) {
+      var k = n.hasKids ? 12 : 0;
+      return [n.x - 6, n.y - 6, n.x + n.w + k + 6, n.y + n.h + k + 6];
+    });
+    var gs = Array.prototype.slice.call(layer.querySelectorAll(':scope > .dg-edge'));
+    gs.forEach(function (g) { if (g.querySelector('.dg-edge-count')) taken.push([g._mid[0] - 24, g._mid[1] - 24, g._mid[0] + 24, g._mid[1] + 24]); });
+    function free(b) { return !taken.some(function (t) { return b[0] < t[2] && b[2] > t[0] && b[1] < t[3] && b[3] > t[1]; }); }
+    gs.forEach(function (g) {
+      var t = g._label, geo = g._geo;
+      if (!t || !geo) return;
+      var w = textWidth(t.textContent, 24) / 2 + 6, counted = !!g.querySelector('.dg-edge-count');
+      var ts = [0.5, 0.4, 0.6, 0.3, 0.7, 0.22, 0.78];
+      for (var i = 0; i < ts.length; i++) {
+        var pt = quadPoint(geo, ts[i]);
+        var dys = ts[i] === 0.5 && counted ? [-30, 46] : [-14, 32];
+        for (var j = 0; j < dys.length; j++) {
+          var y = pt[1] + dys[j], b = [pt[0] - w, y - 24, pt[0] + w, y + 6];
+          if (free(b)) {
+            t.setAttribute('x', pt[0]);
+            t.setAttribute('y', y);
+            taken.push(b);
+            return;
+          }
+        }
+      }
+      t.classList.add('is-crowded');
+    });
+  }
+  /** 矢印の線 (直線または 2 次ベジェ曲線) の上の点。t = 0 で始点、1 で終点 */
+  function quadPoint(geo, t) {
+    var p1 = geo.p1, p2 = geo.p2, q = geo.q || [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2], u = 1 - t;
+    return [u * u * p1[0] + 2 * u * t * q[0] + t * t * p2[0], u * u * p1[1] + 2 * u * t * q[1] + t * t * p2[1]];
   }
 
   /** テーブル間の関連 (外部キー): 列の行どうしを曲線で結び、両端に多重度 (N / 1) の印を付ける */
@@ -2731,8 +3301,10 @@ body.jh-map-printing .jh-map-main { display: none; }
       var nx = -(p2[1] - p1[1]) * bend, ny = (p2[0] - p1[0]) * bend;
       d = 'M' + p1[0] + ' ' + p1[1] + ' Q' + (mx + nx) + ' ' + (my + ny) + ' ' + p2[0] + ' ' + p2[1];
       g._mid = [mx + nx / 2, my + ny / 2]; // 2 次ベジェ曲線の中点
+      g._geo = { p1: p1, p2: p2, q: [mx + nx, my + ny] };
     } else {
       d = 'M' + p1[0] + ' ' + p1[1] + ' L' + p2[0] + ' ' + p2[1];
+      g._geo = { p1: p1, p2: p2 };
     }
     g._d = d;
     s('path', { id: id, d: d, class: 'dg-edge-line', 'marker-end': 'url(#' + uid + '-arrow-n)', 'marker-start': e.both ? 'url(#' + uid + '-arrow-n)' : null }, g);
@@ -2750,6 +3322,7 @@ body.jh-map-printing .jh-map-main { display: none; }
       var lp = e.hit ? g._mid : [mx, my];
       var t = s('text', { x: lp[0], y: lp[1] - (e.count > 1 ? 30 : 14), class: 'dg-edge-label' }, g);
       t.textContent = e.label;
+      g._label = t;
     }
     return g;
   }
@@ -3228,17 +3801,19 @@ body.jh-map-printing .jh-map-main { display: none; }
     function go(p, animate) {
       if (p === cur) return Promise.resolve(true);
       var tok = ++navTok, from = cur;
+      // 動きを減らす設定 (prefers-reduced-motion) では、カメラを動かさずにフェードだけで切り替える
+      if (animate && REDUCED_MOTION) { container.classList.remove('dg-leaving'); draw(p, true); return Promise.resolve(true); }
       if (animate && from != null && isAncestor(from, p)) {
         var n = level(from).byId[repIn(p, from)];
         container.classList.add('dg-leaving'); // 寄りながら今の図を薄くし、中の図に差し替える
-        var entered = cam.fit(nearRect(n), true).then(function () {
+        var entered = cam.fit(nearRect(n), DRILL_MS).then(function () {
           container.classList.remove('dg-leaving');
           if (tok !== navTok) return false;
           draw(p, 'in');
           return true;
         });
         // Deck.settled は呼ばれた時点の演出しか待たないので、寄る → 描き直す → 現れるまでを最初に 1 つとして登録する
-        track(entered.then(function () { return new Promise(function (r) { setTimeout(r, 500); }); }));
+        track(entered.then(function () { return new Promise(function (r) { setTimeout(r, 400); }); }));
         return entered;
       }
       container.classList.remove('dg-leaving');
@@ -3246,13 +3821,13 @@ body.jh-map-printing .jh-map-main { display: none; }
       draw(p, out ? 'out' : animate);
       if (out) {
         var r = level(p).byId[repIn(from, p)];
-        if (r) { cam.fit(nearRect(r), false); return cam.reset(true).then(function () { return tok === navTok; }); }
+        if (r) { cam.fit(nearRect(r), false); return cam.reset(DRILL_MS).then(function () { return tok === navTok; }); }
       }
       return Promise.resolve(true);
     }
     /**
      * 階層を移るときにカメラが寄る範囲: 箱 n の周り。箱いっぱいまで寄ると、文字が画面からあふれるほど
-     * 大きくなって目が追えないので、DRILL_ZOOM 倍までにとどめる (残りは中の図の拡大 (.dg-enter-in) で見せる)
+     * 大きくなって威圧感があり目も追えないので、DRILL_ZOOM 倍までにとどめる (あとは中の図のクロスフェード (.dg-enter-in) で見せる)
      */
     function nearRect(n) {
       var f = cam.full;

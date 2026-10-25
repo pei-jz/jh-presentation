@@ -199,3 +199,162 @@ test('閲覧の補助: ホイールで拡大するとミニマップが出て、
   assert.equal(await p2.evaluate(() => document.querySelector('.dg-minimap').hidden), true);
   await p2.close();
 });
+
+test('目次: ☰ で目次ごと畳めて状態が残る。三角で枝を開閉でき、今いる階層の枝は自動で開く', async () => {
+  const p2 = await browser.newPage({ viewport: { width: 1440, height: 860 } });
+  await p2.goto(URL_);
+  await p2.waitForFunction(() => document.documentElement.classList.contains('map-ready'));
+  const tocWidth = () => p2.evaluate(() => document.querySelector('.jh-map-toc').getBoundingClientRect().width);
+  assert.ok((await tocWidth()) > 200);
+  await p2.click('.jh-map-toc-toggle');
+  await p2.waitForTimeout(300);
+  assert.ok((await tocWidth()) < 1, '畳むと図が横いっぱいになる');
+  await p2.reload();
+  await p2.waitForFunction(() => document.documentElement.classList.contains('map-ready'));
+  assert.ok((await tocWidth()) < 1, '畳んだ状態は再読み込みしても残る');
+  await p2.click('.jh-map-toc-toggle');
+  await p2.waitForTimeout(300);
+  assert.ok((await tocWidth()) > 200);
+
+  const visible = (id) => p2.evaluate((i) => !document.querySelector(`.jh-toc-item[data-id="${i}"]`).closest('li').hidden, id);
+  const twisty = (id) => p2.locator(`li:has(> .jh-toc-item[data-id="${id}"]) > .jh-toc-twisty`);
+  await twisty('order').click();
+  assert.equal(await visible('order.api'), false, '枝を閉じると子が隠れる');
+  assert.equal(await visible('order.api.check'), false, '孫も隠れる');
+  assert.equal(await twisty('order').getAttribute('aria-expanded'), 'false');
+  await p2.evaluate(() => JhMap.api.reveal('order.api.check'));
+  await p2.evaluate(() => window.Deck.settled(4000));
+  assert.equal(await visible('order.api.check'), true, '選んだノードの枝は自動で開く');
+  await p2.click('.jh-toc-tool >> text=すべて閉じる');
+  assert.equal(await visible('order'), true, '一番上の階層は常に見える');
+  assert.equal(await visible('order.api.check'), true, '今いる階層の枝は開いたまま');
+  assert.equal(await visible('stock.db.stocks'), false);
+  await p2.click('.jh-toc-tool >> text=すべて開く');
+  assert.equal(await visible('stock.db.stocks'), true);
+  await p2.evaluate(() => localStorage.clear());
+  await p2.close();
+});
+
+test('目次: ノードが多いと、一番上の階層の箱の子までを開き、深い枝は閉じておく', async () => {
+  const nodes = Array.from({ length: 6 }, (_, i) => ({ id: 's' + i, label: 'システム ' + i, children: { nodes:
+    Array.from({ length: 4 }, (_, j) => ({ id: `s${i}.m${j}`, label: `機能 ${i}-${j}`, children: { nodes:
+      [{ id: `s${i}.m${j}.a`, label: '部品 A' }, { id: `s${i}.m${j}.b`, label: '部品 B' }] } })) } }));
+  const file = path.join(ROOT, 'dist', 'test-toc.html');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, buildMap({ title: 'toc', map: { nodes } }, {}));
+  const p2 = await browser.newPage({ viewport: { width: 1440, height: 860 } });
+  await p2.goto(pathToFileURL(file).href);
+  await p2.waitForFunction(() => document.documentElement.classList.contains('map-ready'));
+  const shown = await p2.evaluate(() => [...document.querySelectorAll('.jh-map-toc li:not([hidden]) .jh-toc-item')].map((b) => b.getAttribute('data-id')));
+  await p2.close();
+  fs.rmSync(file);
+  assert.ok(shown.includes('s0.m0'), '一番上の階層の箱の子は見える');
+  assert.ok(!shown.includes('s0.m0.a'), 'それより深い枝は閉じる');
+});
+
+test('テーマ: 埋め込んだ候補から選べて、選択が残る (?theme= でも指定できる)', async () => {
+  const p2 = await browser.newPage({ viewport: { width: 1440, height: 860 } });
+  await p2.goto(URL_);
+  await p2.waitForFunction(() => document.documentElement.classList.contains('map-ready'));
+  const opts = await p2.evaluate(() => [...document.querySelectorAll('.jh-map-theme option')].map((o) => o.value));
+  assert.deepEqual(opts.sort(), ['corporate', 'dark', 'default', 'mono', 'pop']);
+  const bg = () => p2.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  const light = await bg();
+  await p2.selectOption('.jh-map-theme', 'dark');
+  assert.equal(await bg(), 'rgb(15, 19, 28)', 'dark の背景');
+  await p2.reload();
+  await p2.waitForFunction(() => document.documentElement.classList.contains('map-ready'));
+  assert.equal(await bg(), 'rgb(15, 19, 28)', '選んだテーマは再読み込みしても残る');
+  assert.equal(await p2.inputValue('.jh-map-theme'), 'dark');
+  assert.deepEqual(await p2.evaluate(() => window.Deck.audit()), [], 'dark でも検査は空');
+  await p2.selectOption('.jh-map-theme', 'default');
+  assert.equal(await bg(), light);
+  await p2.goto(URL_ + '?theme=pop');
+  await p2.waitForFunction(() => document.documentElement.classList.contains('map-ready'));
+  assert.equal(await p2.inputValue('.jh-map-theme'), 'pop');
+  await p2.evaluate(() => localStorage.clear());
+  await p2.close();
+});
+
+test('印刷 (通常の画面・Ctrl+P): 印刷の間だけ階層ごとのページになり、終わると元の階層に戻る', async () => {
+  const p2 = await browser.newPage({ viewport: { width: 1440, height: 860 } });
+  await p2.goto(URL_ + '#/order.api');
+  await p2.waitForFunction(() => document.documentElement.classList.contains('map-ready'));
+  await p2.evaluate(() => window.Deck.settled(4000));
+  const during = await p2.evaluate(() => {
+    window.dispatchEvent(new Event('beforeprint'));
+    return {
+      pages: document.querySelectorAll('.jh-print-page').length,
+      hints: [...document.querySelectorAll('.jh-print-page text.dg-hint')].map((t) => t.textContent),
+      hash: location.hash,
+    };
+  });
+  assert.equal(during.pages, 7);
+  assert.ok(during.hints.length && during.hints.every((t) => t === '中身は後のページ'), '紙では「中身は後のページ」');
+  assert.equal(during.hash, '#/order.api', '印刷のための描き直しで URL は変わらない');
+  const after_ = await p2.evaluate(() => {
+    window.dispatchEvent(new Event('afterprint'));
+    return { pages: document.querySelectorAll('.jh-print-page').length, level: JhMap.api.level(), cls: document.body.classList.contains('jh-map-printing') };
+  });
+  assert.deepEqual(after_, { pages: 0, level: 'order.api', cls: false });
+  // PDF (Chrome の印刷) でも階層ごとのページになる
+  const pdf = await p2.pdf({ preferCSSPageSize: true });
+  assert.ok((pdf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length >= 7);
+  await p2.close();
+});
+
+test('階層に入る動き: 動きを減らす設定では、カメラを動かさずに切り替える', async () => {
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 860 }, reducedMotion: 'reduce' });
+  const p2 = await ctx.newPage();
+  await p2.goto(URL_);
+  await p2.waitForFunction(() => document.documentElement.classList.contains('map-ready'));
+  const t = await p2.evaluate(() => {
+    document.querySelector('.jh-toc-item[data-id="order"]').click();
+    return { level: JhMap.api.level(), leaving: document.querySelector('.jh-map-stage .dg').classList.contains('dg-leaving') };
+  });
+  await ctx.close();
+  assert.deepEqual(t, { level: 'order', leaving: false }, 'カメラが寄るのを待たずに、すぐ中の図に切り替わる');
+});
+
+async function openMap(map) {
+  const file = path.join(ROOT, 'dist', 'test-layout.html');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, buildMap({ title: 'layout', map }, {}));
+  const p2 = await browser.newPage({ viewport: { width: 1440, height: 860 } });
+  await p2.goto(pathToFileURL(file).href);
+  await p2.waitForFunction(() => document.documentElement.classList.contains('map-ready'));
+  return { p2, done: async () => { await p2.close(); fs.rmSync(file); } };
+}
+const col = (n) => Array.from({ length: 5 }, (_, i) => ({ id: n + i, label: n.toUpperCase() + i }));
+
+test('自動配置: 書いた順のままだと矢印が交差するときは、列の中の並びを変えて交差を減らす', async () => {
+  const edges = Array.from({ length: 5 }, (_, i) => ({ from: 'a' + i, to: 'b' + (4 - i) })); // 書いた順のままだと全部交差する
+  const { p2, done } = await openMap({ nodes: [...col('a'), ...col('b')], edges });
+  const y = await p2.evaluate(() => Object.fromEntries([...document.querySelectorAll('.jh-map-stage .dg-node[data-id]')]
+    .map((g) => [g.getAttribute('data-id'), g.querySelector('.dg-shape').getBoundingClientRect().top])));
+  await done();
+  // 2 本の矢印 (a_i → b_4-i) が交差するのは、左の上下と右の上下が逆のとき
+  let crossings = 0;
+  for (let i = 0; i < 5; i++) for (let j = i + 1; j < 5; j++) if ((y['a' + i] - y['a' + j]) * (y['b' + (4 - i)] - y['b' + (4 - j)]) < 0) crossings++;
+  assert.equal(crossings, 0);
+});
+
+test('混み合う矢印: ラベルは箱・他のラベルと重ならない位置に置き、置けないものは隠して触れたときに出す', async () => {
+  const edges = [];
+  for (let i = 0; i < 5; i++) for (let k = 0; k < 3; k++) edges.push({ from: 'a' + i, to: 'b' + ((i + k * 2) % 5), label: '少し長めのラベル ' + i + '-' + k });
+  const { p2, done } = await openMap({ nodes: [...col('a'), ...col('b')], edges });
+  const st = await p2.evaluate(() => ({
+    labels: document.querySelectorAll('.jh-map-stage .dg-edge-label').length,
+    crowded: document.querySelectorAll('.jh-map-stage .dg-edge-label.is-crowded').length,
+    issues: window.Deck.audit(),
+  }));
+  if (st.crowded) {
+    const g = p2.locator('.jh-map-stage .dg-edge:has(.dg-edge-label.is-crowded)').first();
+    await g.locator('.dg-edge-hit').hover({ force: true });
+    st.shownOnHover = await g.locator('.dg-edge-label').evaluate((t) => getComputedStyle(t).display !== 'none');
+  }
+  await done();
+  assert.equal(st.labels, 15);
+  assert.deepEqual(st.issues, [], 'ラベル同士・箱と重ならない');
+  if (st.crowded) assert.ok(st.shownOnHover, '隠したラベルは矢印に触れると出る');
+});

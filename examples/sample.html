@@ -1757,6 +1757,9 @@ body.deck-print-mode {
   stroke-width: 8px;
   stroke-linejoin: round;
 }
+/* 置き場所のないラベル (階層マップで矢印が混み合うとき) は隠し、矢印に触れたとき・強調したときに出す */
+.dg-edge-label.is-crowded { display: none; }
+.dg-edge:hover .dg-edge-label.is-crowded, .dg-edge.is-focus .dg-edge-label.is-crowded, .dg-edge.is-current .dg-edge-label.is-crowded { display: inline; }
 .dg-dot { fill: var(--accent); opacity: 0; transition: opacity .3s; }
 .dg-edge.is-flowing .dg-dot { opacity: 1; }
 .dg-edge.is-flowing .dg-edge-hi, .dg-edge.is-focus .dg-edge-hi { opacity: 1; }
@@ -1874,13 +1877,17 @@ body.deck-print-mode {
 .dg-edge-count circle { fill: var(--bg); stroke: var(--accent); stroke-width: 3; }
 .dg-edge-count text { font-size: 22px; font-weight: 700; fill: var(--accent); text-anchor: middle; dominant-baseline: central; }
 .dg-enter { animation: dg-fade .45s ease both; }
-/* 階層マップの移動: 寄りながら今の図を薄くし、中の図は少し小さい所から、外の図は少し大きい所から現れる */
-.dg.dg-leaving .dg-svg > g { opacity: .15; transition: opacity .5s ease .1s; }
+/* 階層マップの移動: 軽く寄りながら今の図を薄くし、中の図・外の図はほぼ同じ大きさのままフェードで現れる (拡大の威圧感を出さない) */
+.dg.dg-leaving .dg-svg > g { opacity: .25; transition: opacity .3s ease; }
 .dg-enter-in, .dg-enter-out { transform-box: view-box; transform-origin: 50% 50%; }
-.dg-enter-in { animation: dg-fade .45s ease both, dg-zoom-in .45s ease both; }
-.dg-enter-out { animation: dg-fade .45s ease both, dg-zoom-out .45s ease both; }
-@keyframes dg-zoom-in { from { transform: scale(.9); } }
-@keyframes dg-zoom-out { from { transform: scale(1.06); } }
+.dg-enter-in { animation: dg-fade .35s ease-out both, dg-zoom-in .35s ease-out both; }
+.dg-enter-out { animation: dg-fade .35s ease-out both, dg-zoom-out .35s ease-out both; }
+@keyframes dg-zoom-in { from { transform: scale(.98); } }
+@keyframes dg-zoom-out { from { transform: scale(1.02); } }
+@media (prefers-reduced-motion: reduce) {
+  .dg-enter, .dg-enter-in, .dg-enter-out { animation: dg-fade .2s ease both; }
+  .dg.dg-leaving .dg-svg > g { transition: none; }
+}
 
 /* データの流れ: 今の区間を太く、右下に流れのボタン */
 .dg-edge.is-current .dg-edge-hi { stroke-width: 8; }
@@ -4227,8 +4234,11 @@ body.deck-print-mode {
   var IS_PRINT = Deck && Deck.mode === 'print';
   var instances = [];
   var dataIssues = []; // 図のデータの誤り (Deck.audit() で報告する)
-  var DRILL_ZOOM = 2.2;
-  var TABLE_ROWS = 10; // 階層マップのテーブルの箱に出す列の数 (超えた分は「ほか N 列」。全部は詳細パネルに出す) // 階層マップで中へ入る・外へ出るときに、カメラが寄る倍率の上限
+  // 階層マップで中へ入る・外へ出るときに、カメラが寄る倍率の上限と時間。大きく速く寄ると威圧感があるので、軽く寄ってクロスフェードで見せる
+  var DRILL_ZOOM = 1.35;
+  var DRILL_MS = 380;
+  var REDUCED_MOTION = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  var TABLE_ROWS = 10; // 階層マップのテーブルの箱に出す列の数 (超えた分は「ほか N 列」。全部は詳細パネルに出す)
 
   // ------------------------------------------------------------------
   // 共通ユーティリティ
@@ -4334,7 +4344,7 @@ body.deck-print-mode {
     cancelAnimationFrame(this.raf);
     if (this.done) { this.done(); this.done = null; } // 途中で止めた移動も完了扱いにする (settled が待ち続けないように)
     if (!animate || IS_PRINT) { this.apply(target.slice()); return Promise.resolve(); }
-    var from = this.vb.slice(), start = null, dur = 650;
+    var from = this.vb.slice(), start = null, dur = typeof animate === 'number' ? animate : 650; // animate に数値を渡すとその時間 (ms)
     return track(new Promise(function (resolve) {
       self.done = resolve;
       function frame(t) {
@@ -4512,20 +4522,79 @@ body.deck-print-mode {
     });
     var ranks = [];
     nodes.forEach(function (n) { (ranks[n._rank] = ranks[n._rank] || []).push(n); });
-    var main = 0;
-    ranks.forEach(function (rank) {
-      if (!rank) return;
-      var size = 0, cross = 0;
-      rank.forEach(function (n) { size = Math.max(size, dir === 'TB' ? n.h : n.w); cross += (dir === 'TB' ? n.w : n.h) + gapCross; });
-      cross -= gapCross;
-      var pos = -cross / 2;
-      rank.forEach(function (n) {
-        if (n._fixed) return;
-        if (dir === 'TB') { n.x = pos; n.y = main + (size - n.h) / 2; pos += n.w + gapCross; }
-        else { n.x = main + (size - n.w) / 2; n.y = pos; pos += n.h + gapCross; }
+    function place() {
+      var main = 0;
+      ranks.forEach(function (rank) {
+        if (!rank) return;
+        var size = 0, cross = 0;
+        rank.forEach(function (n) { size = Math.max(size, dir === 'TB' ? n.h : n.w); cross += (dir === 'TB' ? n.w : n.h) + gapCross; });
+        cross -= gapCross;
+        var pos = -cross / 2;
+        rank.forEach(function (n) {
+          if (n._fixed) return;
+          if (dir === 'TB') { n.x = pos; n.y = main + (size - n.h) / 2; pos += n.w + gapCross; }
+          else { n.x = main + (size - n.w) / 2; n.y = pos; pos += n.h + gapCross; }
+        });
+        main += size + gapMain;
       });
-      main += size + gapMain;
+    }
+    place();
+    reduceCrossings(ranks, es, byId, dir, place);
+  }
+
+  /**
+   * 矢印の交差を減らす: 各列のノードを、つながる相手の位置の平均 (重心) の順に並べ替えることを数回繰り返し、
+   * 交差が一番少なかった並びを使う。元の並び (書いた順) より減らないときは元のまま (小さな図の見た目を変えない)
+   */
+  function reduceCrossings(ranks, es, byId, dir, place) {
+    if (es.length < 3 || ranks.some(function (r) { return r && r.some(function (n) { return n._fixed; }); })) return;
+    var c = function (n) { return dir === 'TB' ? n.x + n.w / 2 : n.y + n.h / 2; };
+    var m = function (n) { return dir === 'TB' ? n.y + n.h / 2 : n.x + n.w / 2; };
+    function crossings() {
+      var segs = es.map(function (e) { var a = byId[e.from], b = byId[e.to]; return [a, b, m(a), c(a), m(b), c(b)]; });
+      var count = 0;
+      for (var i = 0; i < segs.length; i++) {
+        for (var j = i + 1; j < segs.length; j++) {
+          var A = segs[i], B = segs[j];
+          if (A[0] === B[0] || A[0] === B[1] || A[1] === B[0] || A[1] === B[1]) continue;
+          if (segCross(A[2], A[3], A[4], A[5], B[2], B[3], B[4], B[5])) count++;
+        }
+      }
+      return count;
+    }
+    var neighbors = {};
+    es.forEach(function (e) {
+      (neighbors[e.from] = neighbors[e.from] || []).push(byId[e.to]);
+      (neighbors[e.to] = neighbors[e.to] || []).push(byId[e.from]);
     });
+    var snapshot = function () { return ranks.map(function (r) { return r ? r.slice() : r; }); };
+    var best = snapshot(), bestCount = crossings();
+    for (var iter = 0; iter < 8 && bestCount > 0; iter++) {
+      var order = ranks.map(function (r, i) { return i; });
+      if (iter % 2) order.reverse();
+      order.forEach(function (i) {
+        var rank = ranks[i];
+        if (!rank || rank.length < 2) return;
+        var key = {};
+        rank.forEach(function (n, k) {
+          var ns = neighbors[n.id] || [];
+          key[n.id] = ns.length ? ns.reduce(function (t, x) { return t + c(x); }, 0) / ns.length : c(n);
+          key[n.id] += k * 1e-6; // 同じ値なら今の順
+        });
+        rank.sort(function (a, b) { return key[a.id] - key[b.id]; });
+        place();
+      });
+      var now = crossings();
+      if (now < bestCount) { bestCount = now; best = snapshot(); }
+    }
+    best.forEach(function (r, i) { ranks[i] = r; });
+    place();
+  }
+  /** 線分 (x1,y1)-(x2,y2) と (x3,y3)-(x4,y4) が交わるか (端の接触は含めない) */
+  function segCross(x1, y1, x2, y2, x3, y3, x4, y4) {
+    function side(ax, ay, bx, by, cx, cy) { var v = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax); return v > 1e-9 ? 1 : v < -1e-9 ? -1 : 0; }
+    var d1 = side(x3, y3, x4, y4, x1, y1), d2 = side(x3, y3, x4, y4, x2, y2), d3 = side(x1, y1, x2, y2, x3, y3), d4 = side(x1, y1, x2, y2, x4, y4);
+    return d1 * d2 < 0 && d3 * d4 < 0;
   }
 
   function bounds(items) {
@@ -4732,6 +4801,47 @@ body.deck-print-mode {
         ct.textContent = e.count;
       }
     });
+    if (obstacles) placeLabels(layer, obstacles);
+  }
+
+  /**
+   * 矢印のラベルを、箱・本数の丸・他のラベルと重ならない位置に置く (矢印の中ほどから端へ向かって候補を試す)。
+   * どこにも置けないラベルは隠し (.is-crowded)、矢印に触れたとき・強調したときに出す。
+   * 中身は矢印のクリックで出る一覧 (まとめた元の矢印) で読める
+   */
+  function placeLabels(layer, obstacles) {
+    var taken = obstacles.map(function (n) {
+      var k = n.hasKids ? 12 : 0;
+      return [n.x - 6, n.y - 6, n.x + n.w + k + 6, n.y + n.h + k + 6];
+    });
+    var gs = Array.prototype.slice.call(layer.querySelectorAll(':scope > .dg-edge'));
+    gs.forEach(function (g) { if (g.querySelector('.dg-edge-count')) taken.push([g._mid[0] - 24, g._mid[1] - 24, g._mid[0] + 24, g._mid[1] + 24]); });
+    function free(b) { return !taken.some(function (t) { return b[0] < t[2] && b[2] > t[0] && b[1] < t[3] && b[3] > t[1]; }); }
+    gs.forEach(function (g) {
+      var t = g._label, geo = g._geo;
+      if (!t || !geo) return;
+      var w = textWidth(t.textContent, 24) / 2 + 6, counted = !!g.querySelector('.dg-edge-count');
+      var ts = [0.5, 0.4, 0.6, 0.3, 0.7, 0.22, 0.78];
+      for (var i = 0; i < ts.length; i++) {
+        var pt = quadPoint(geo, ts[i]);
+        var dys = ts[i] === 0.5 && counted ? [-30, 46] : [-14, 32];
+        for (var j = 0; j < dys.length; j++) {
+          var y = pt[1] + dys[j], b = [pt[0] - w, y - 24, pt[0] + w, y + 6];
+          if (free(b)) {
+            t.setAttribute('x', pt[0]);
+            t.setAttribute('y', y);
+            taken.push(b);
+            return;
+          }
+        }
+      }
+      t.classList.add('is-crowded');
+    });
+  }
+  /** 矢印の線 (直線または 2 次ベジェ曲線) の上の点。t = 0 で始点、1 で終点 */
+  function quadPoint(geo, t) {
+    var p1 = geo.p1, p2 = geo.p2, q = geo.q || [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2], u = 1 - t;
+    return [u * u * p1[0] + 2 * u * t * q[0] + t * t * p2[0], u * u * p1[1] + 2 * u * t * q[1] + t * t * p2[1]];
   }
 
   /** テーブル間の関連 (外部キー): 列の行どうしを曲線で結び、両端に多重度 (N / 1) の印を付ける */
@@ -4769,8 +4879,10 @@ body.deck-print-mode {
       var nx = -(p2[1] - p1[1]) * bend, ny = (p2[0] - p1[0]) * bend;
       d = 'M' + p1[0] + ' ' + p1[1] + ' Q' + (mx + nx) + ' ' + (my + ny) + ' ' + p2[0] + ' ' + p2[1];
       g._mid = [mx + nx / 2, my + ny / 2]; // 2 次ベジェ曲線の中点
+      g._geo = { p1: p1, p2: p2, q: [mx + nx, my + ny] };
     } else {
       d = 'M' + p1[0] + ' ' + p1[1] + ' L' + p2[0] + ' ' + p2[1];
+      g._geo = { p1: p1, p2: p2 };
     }
     g._d = d;
     s('path', { id: id, d: d, class: 'dg-edge-line', 'marker-end': 'url(#' + uid + '-arrow-n)', 'marker-start': e.both ? 'url(#' + uid + '-arrow-n)' : null }, g);
@@ -4788,6 +4900,7 @@ body.deck-print-mode {
       var lp = e.hit ? g._mid : [mx, my];
       var t = s('text', { x: lp[0], y: lp[1] - (e.count > 1 ? 30 : 14), class: 'dg-edge-label' }, g);
       t.textContent = e.label;
+      g._label = t;
     }
     return g;
   }
@@ -5266,17 +5379,19 @@ body.deck-print-mode {
     function go(p, animate) {
       if (p === cur) return Promise.resolve(true);
       var tok = ++navTok, from = cur;
+      // 動きを減らす設定 (prefers-reduced-motion) では、カメラを動かさずにフェードだけで切り替える
+      if (animate && REDUCED_MOTION) { container.classList.remove('dg-leaving'); draw(p, true); return Promise.resolve(true); }
       if (animate && from != null && isAncestor(from, p)) {
         var n = level(from).byId[repIn(p, from)];
         container.classList.add('dg-leaving'); // 寄りながら今の図を薄くし、中の図に差し替える
-        var entered = cam.fit(nearRect(n), true).then(function () {
+        var entered = cam.fit(nearRect(n), DRILL_MS).then(function () {
           container.classList.remove('dg-leaving');
           if (tok !== navTok) return false;
           draw(p, 'in');
           return true;
         });
         // Deck.settled は呼ばれた時点の演出しか待たないので、寄る → 描き直す → 現れるまでを最初に 1 つとして登録する
-        track(entered.then(function () { return new Promise(function (r) { setTimeout(r, 500); }); }));
+        track(entered.then(function () { return new Promise(function (r) { setTimeout(r, 400); }); }));
         return entered;
       }
       container.classList.remove('dg-leaving');
@@ -5284,13 +5399,13 @@ body.deck-print-mode {
       draw(p, out ? 'out' : animate);
       if (out) {
         var r = level(p).byId[repIn(from, p)];
-        if (r) { cam.fit(nearRect(r), false); return cam.reset(true).then(function () { return tok === navTok; }); }
+        if (r) { cam.fit(nearRect(r), false); return cam.reset(DRILL_MS).then(function () { return tok === navTok; }); }
       }
       return Promise.resolve(true);
     }
     /**
      * 階層を移るときにカメラが寄る範囲: 箱 n の周り。箱いっぱいまで寄ると、文字が画面からあふれるほど
-     * 大きくなって目が追えないので、DRILL_ZOOM 倍までにとどめる (残りは中の図の拡大 (.dg-enter-in) で見せる)
+     * 大きくなって威圧感があり目も追えないので、DRILL_ZOOM 倍までにとどめる (あとは中の図のクロスフェード (.dg-enter-in) で見せる)
      */
     function nearRect(n) {
       var f = cam.full;

@@ -86,6 +86,9 @@
   stroke-width: 8px;
   stroke-linejoin: round;
 }
+/* 置き場所のないラベル (階層マップで矢印が混み合うとき) は隠し、矢印に触れたとき・強調したときに出す */
+.dg-edge-label.is-crowded { display: none; }
+.dg-edge:hover .dg-edge-label.is-crowded, .dg-edge.is-focus .dg-edge-label.is-crowded, .dg-edge.is-current .dg-edge-label.is-crowded { display: inline; }
 .dg-dot { fill: var(--accent); opacity: 0; transition: opacity .3s; }
 .dg-edge.is-flowing .dg-dot { opacity: 1; }
 .dg-edge.is-flowing .dg-edge-hi, .dg-edge.is-focus .dg-edge-hi { opacity: 1; }
@@ -203,13 +206,17 @@
 .dg-edge-count circle { fill: var(--bg); stroke: var(--accent); stroke-width: 3; }
 .dg-edge-count text { font-size: 22px; font-weight: 700; fill: var(--accent); text-anchor: middle; dominant-baseline: central; }
 .dg-enter { animation: dg-fade .45s ease both; }
-/* 階層マップの移動: 寄りながら今の図を薄くし、中の図は少し小さい所から、外の図は少し大きい所から現れる */
-.dg.dg-leaving .dg-svg > g { opacity: .15; transition: opacity .5s ease .1s; }
+/* 階層マップの移動: 軽く寄りながら今の図を薄くし、中の図・外の図はほぼ同じ大きさのままフェードで現れる (拡大の威圧感を出さない) */
+.dg.dg-leaving .dg-svg > g { opacity: .25; transition: opacity .3s ease; }
 .dg-enter-in, .dg-enter-out { transform-box: view-box; transform-origin: 50% 50%; }
-.dg-enter-in { animation: dg-fade .45s ease both, dg-zoom-in .45s ease both; }
-.dg-enter-out { animation: dg-fade .45s ease both, dg-zoom-out .45s ease both; }
-@keyframes dg-zoom-in { from { transform: scale(.9); } }
-@keyframes dg-zoom-out { from { transform: scale(1.06); } }
+.dg-enter-in { animation: dg-fade .35s ease-out both, dg-zoom-in .35s ease-out both; }
+.dg-enter-out { animation: dg-fade .35s ease-out both, dg-zoom-out .35s ease-out both; }
+@keyframes dg-zoom-in { from { transform: scale(.98); } }
+@keyframes dg-zoom-out { from { transform: scale(1.02); } }
+@media (prefers-reduced-motion: reduce) {
+  .dg-enter, .dg-enter-in, .dg-enter-out { animation: dg-fade .2s ease both; }
+  .dg.dg-leaving .dg-svg > g { transition: none; }
+}
 
 /* データの流れ: 今の区間を太く、右下に流れのボタン */
 .dg-edge.is-current .dg-edge-hi { stroke-width: 8; }

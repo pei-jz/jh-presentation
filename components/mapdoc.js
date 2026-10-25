@@ -1,8 +1,9 @@
 /*!
  * マップ文書のビューア (依存なし)
  *   スライドなしで、階層マップ (.diagram) を画面いっぱいに表示し、全体から細部へたどって読む。
- *   - 左: 目次 (ノードの階層)。クリックでその階層へ
- *   - 上: 検索 (名前・説明・タグ)、データでの絞り込み、印刷
+ *   - 左: 目次 (ノードの階層)。クリックでその階層へ。☰ で目次ごと畳む、三角で枝ごとに開閉 (ノードが多ければ深い枝は閉じておく)
+ *   - 上: 検索 (名前・説明・タグ)、データでの絞り込み、テーマの切り替え (埋め込んだ候補から)、印刷
+ *   - 印刷: 印刷ボタン・Ctrl+P のどちらでも、印刷の間だけ ?print と同じ並び (階層ごとに 1 ページ) に組み替える
  *   - URL: #/<階層>/<選んだノード>。ブラウザの戻る・進むで階層を行き来でき、リンクで共有できる
  *   - ?print: 階層ごとに 1 ページ (図 + その階層の部品の説明) を並べた印刷用の表示
  *   - JhMap.audit() (= Deck.audit()): データの誤り・1 階層のノード数・文字の重なりを検査する
@@ -13,6 +14,11 @@
   'use strict';
 
   var PRINT = /[?&]print\b/.test(location.search);
+  var store = {
+    get: function (k) { try { return localStorage.getItem('jh-map:' + k); } catch (e) { return null; } },
+    set: function (k, v) { try { if (v == null) localStorage.removeItem('jh-map:' + k); else localStorage.setItem('jh-map:' + k, v); } catch (e) { /* 保存できなくても表示は続ける */ } },
+  };
+  var WIDE = '(min-width: 861px)'; // これより狭いと目次は引き出し (mapdoc.css と合わせる)
   var tracked = [], auditors = [];
   var quiet = false; // 検査中は URL・目次を動かさない
 
@@ -78,12 +84,13 @@
   };
 
   function start() {
+    applyTheme(initialTheme());
     var api = container.jhDiagram;
     if (!api) { document.documentElement.classList.add('map-ready'); return; }
     buildHead(api);
     buildToc(api);
     if (PRINT) buildPrint(api);
-    else { bindUrl(api); bindHost(); }
+    else { bindUrl(api); bindHost(); bindPrint(api); }
     document.documentElement.classList.add('map-ready');
   }
 
@@ -126,8 +133,23 @@
     var showBrand = document.body.getAttribute('data-brand') && document.body.getAttribute('data-brand') !== 'none';
     var tocBtn = h('button', 'jh-map-btn jh-map-toc-toggle', head, '☰');
     tocBtn.type = 'button';
-    tocBtn.setAttribute('aria-label', '目次を開く');
-    tocBtn.addEventListener('click', function () { document.body.classList.toggle('jh-toc-open'); });
+    tocBtn.title = '目次の表示・非表示';
+    tocBtn.setAttribute('aria-label', '目次の表示・非表示');
+    // 広い画面: 目次を畳む / 出す (状態を保存)。狭い画面: 引き出しを開く / 閉じる
+    if (store.get('toc') === 'closed') document.body.classList.add('jh-toc-collapsed');
+    function tocState() {
+      var shown = matchMedia(WIDE).matches ? !document.body.classList.contains('jh-toc-collapsed') : document.body.classList.contains('jh-toc-open');
+      tocBtn.setAttribute('aria-expanded', String(shown));
+    }
+    tocBtn.addEventListener('click', function () {
+      if (matchMedia(WIDE).matches) {
+        store.set('toc', document.body.classList.toggle('jh-toc-collapsed') ? 'closed' : null);
+      } else {
+        document.body.classList.toggle('jh-toc-open');
+      }
+      tocState();
+    });
+    tocState();
     if (showBrand && (brand.logo || brand.name)) {
       var b = h('div', 'jh-map-brand', head);
       if (brand.logo) { var img = h('img', null, b); img.src = brand.logo; img.alt = brand.name || ''; }
@@ -188,36 +210,122 @@
       names.forEach(function (n) { h('option', null, sel, n).value = n; });
       sel.addEventListener('change', function () { api.showData(sel.value); });
     }
+    var themes = themeStyles();
+    if (themes.length > 1) {
+      var tsel = h('select', 'jh-map-theme', tools);
+      tsel.setAttribute('aria-label', 'テーマ');
+      tsel.title = 'テーマ';
+      themes.forEach(function (st) {
+        h('option', null, tsel, 'テーマ: ' + st.getAttribute('data-label')).value = st.getAttribute('data-jh-theme');
+      });
+      tsel.value = currentTheme();
+      tsel.addEventListener('change', function () {
+        applyTheme(tsel.value);
+        store.set('theme:' + location.pathname, tsel.value === docTheme() ? null : tsel.value);
+      });
+    }
     var printBtn = h('button', 'jh-map-btn', tools, '印刷');
     printBtn.type = 'button';
-    printBtn.addEventListener('click', function () { window.open(location.pathname + '?print&autoprint', '_blank'); });
+    // 別のタブを開かずに、この画面のまま印刷する (ポップアップの禁止・エディタの iframe の中でも動くように)。並びは beforeprint で組み替える
+    printBtn.addEventListener('click', function () { window.print(); });
   }
 
   // ---- 目次 ----
+  //   ノードの階層を字下げで並べる。中身のある箱は三角で枝ごとに開閉できる。
+  //   ノードが多い (OPEN_ALL 個を超える) ときは、一番上の階層の箱の子までを開き、それより深い枝は閉じておく。
+  //   今いる階層・選んだノードの枝は自動で開く
+  var OPEN_ALL = 40;
   function buildToc(api) {
+    var tools = h('div', 'jh-toc-tools', toc);
     var ul = h('ul', null, toc);
-    var items = {};
+    var items = {}, rows = [], closed = {};
+    var nodes = api.nodes();
+    var parentOf = {};
+    nodes.forEach(function (n) { parentOf[n.id] = n.parent; });
+    function ancestors(id) {
+      var out = [];
+      for (var p = parentOf[id]; p != null && p !== ''; p = parentOf[p]) out.push(p);
+      return out;
+    }
     function item(id, label, depth, hasKids) {
-      var li = h('li', null, ul);
+      var li = h('li', null, ul), tw = null;
+      li.style.setProperty('--depth', depth);
+      if (hasKids && id !== '') {
+        tw = h('button', 'jh-toc-twisty', li);
+        tw.type = 'button';
+        tw.addEventListener('click', function () { closed[id] = !closed[id]; render(); });
+      }
       var b = h('button', 'jh-toc-item' + (hasKids ? ' has-kids' : ''), li, label);
       b.type = 'button';
       b.style.setProperty('--depth', depth);
       b.setAttribute('data-id', id);
       b.addEventListener('click', function () { document.body.classList.remove('jh-toc-open'); api.reveal(id); });
       items[id] = b;
+      rows.push({ id: id, li: li, tw: tw, anc: id === '' ? [] : ancestors(id) });
     }
     item('', api.title, 0, true);
-    api.nodes().forEach(function (n) { item(n.id, n.label, n.depth + 1, n.hasKids); });
-    function mark(level, sel) {
-      Object.keys(items).forEach(function (id) {
-        items[id].classList.toggle('is-current', id === level);
-        items[id].classList.toggle('is-selected', id === sel);
+    nodes.forEach(function (n) {
+      item(n.id, n.label, n.depth + 1, n.hasKids);
+      if (n.hasKids && nodes.length > OPEN_ALL && n.depth >= 1) closed[n.id] = true;
+    });
+    function render() {
+      rows.forEach(function (r) {
+        r.li.hidden = r.anc.some(function (a) { return closed[a]; });
+        if (r.tw) {
+          r.tw.setAttribute('aria-expanded', String(!closed[r.id]));
+          r.tw.setAttribute('aria-label', (closed[r.id] ? '開く: ' : '閉じる: ') + items[r.id].textContent);
+        }
       });
-      var on = items[sel] || items[level];
+    }
+    [['すべて開く', true], ['すべて閉じる', false]].forEach(function (t) {
+      var b = h('button', 'jh-toc-tool', tools, t[0]);
+      b.type = 'button';
+      b.addEventListener('click', function () {
+        rows.forEach(function (r) { if (r.tw) closed[r.id] = !t[1]; });
+        reopen();
+        render();
+      });
+    });
+    var level = '', sel = null;
+    /** 今いる階層・選んだノードが見えるように、その枝を開く */
+    function reopen() {
+      [level, sel].forEach(function (id) { if (id) ancestors(id).forEach(function (a) { closed[a] = false; }); });
+    }
+    function mark(lv, s2) {
+      level = lv; sel = s2;
+      reopen();
+      render();
+      Object.keys(items).forEach(function (id) {
+        items[id].classList.toggle('is-current', id === lv);
+        items[id].classList.toggle('is-selected', id === s2);
+      });
+      var on = items[s2] || items[lv];
       if (on && on.scrollIntoView && !PRINT) on.scrollIntoView({ block: 'nearest' });
     }
     container.addEventListener('dg:change', function (ev) { if (!quiet) mark(ev.detail.level, ev.detail.selected); });
     mark(api.level(), api.selected());
+  }
+
+  // ---- テーマ (mapfile.mjs が候補を <style data-jh-theme> として埋め込む。使わないものは media="not all") ----
+  function themeStyles() { return Array.prototype.slice.call(document.querySelectorAll('style[data-jh-theme]')); }
+  function docTheme() { var m = document.querySelector('meta[name="jh-theme"]'); return m ? m.content : 'default'; }
+  function currentTheme() {
+    var on = themeStyles().filter(function (st) { return st.media !== 'not all'; })[0];
+    return on ? on.getAttribute('data-jh-theme') : docTheme();
+  }
+  /** ?theme=<名前> > 保存した選択 > 文書のテーマ (?print (PDF 出力) では保存した選択を使わない) */
+  function initialTheme() {
+    var m = location.search.match(/[?&]theme=([\w-]+)/);
+    if (m) return m[1];
+    return (!PRINT && store.get('theme:' + location.pathname)) || docTheme();
+  }
+  function applyTheme(name) {
+    var list = themeStyles();
+    if (!list.some(function (st) { return st.getAttribute('data-jh-theme') === name; })) return;
+    list.forEach(function (st) {
+      if (st.getAttribute('data-jh-theme') === name) st.removeAttribute('media');
+      else st.media = 'not all';
+    });
   }
 
   // ---- URL (#/<階層>/<選んだノード>) ----
@@ -248,7 +356,7 @@
     apply();
   }
 
-  // ---- 印刷: 階層ごとに 1 ページ ----
+  // ---- 印刷: 階層ごとに 1 ページ (?print では最初から、通常の画面では印刷の間だけ) ----
   function buildPrint(api) {
     document.body.classList.add('jh-map-printing');
     var pages = h('div', 'jh-map-print', null);
@@ -261,6 +369,8 @@
       var fig = h('div', 'jh-print-fig dg is-drill', page); // 図の部品の見た目 (.dg.is-drill …) をそのまま使う
       var svg = api.svg.cloneNode(true);
       svg.removeAttribute('id');
+      // 通常の画面から印刷するときは、画面用のヒント (クリックで中へ) を紙の言い方にする (?print では最初からこの言い方)
+      svg.querySelectorAll('text.dg-hint').forEach(function (t) { t.textContent = '中身は後のページ'; });
       fig.appendChild(svg);
       var kids = nodes.filter(function (n) { return n.parent === p; });
       var rows = kids.filter(function (n) { return n.sub || n.detail || n.hasKids || (n.columns && n.columns.length); });
@@ -281,6 +391,27 @@
     });
     api.drawLevel('');
     if (/[?&]autoprint\b/.test(location.search)) setTimeout(function () { window.print(); }, 300);
+    return pages;
+  }
+
+  /** 通常の画面での印刷 (印刷ボタン・Ctrl+P): 印刷の間だけ階層ごとのページに組み替え、終わったら元の階層・選択に戻す */
+  function bindPrint(api) {
+    var pages = null, keepLevel, keepSel;
+    window.addEventListener('beforeprint', function () {
+      if (pages) return;
+      keepLevel = api.level(); keepSel = api.selected();
+      quiet = true;
+      try { pages = buildPrint(api); } finally { quiet = false; }
+    });
+    window.addEventListener('afterprint', function () {
+      if (!pages) return;
+      pages.remove();
+      pages = null;
+      document.body.classList.remove('jh-map-printing');
+      quiet = true;
+      try { api.drawLevel(keepLevel); } finally { quiet = false; }
+      if (keepSel) api.reveal(keepSel);
+    });
   }
 
   // ---- 検査 ----

@@ -12,9 +12,13 @@
 //
 // スライドのエンジン (engine.js) は含めない。表示は components/mapdoc.js (目次・検索・URL・印刷) と
 // components/diagrams.js (階層マップの描画) が受け持つ。
+import fs from 'node:fs';
+import path from 'node:path';
 import {
-  readPkg, version, escapeHtml, unescapeHtml, safeScript, safeJson, themeCss, block, getBlock, stripTag, BRAND_POSITIONS,
+  readPkg, version, escapeHtml, unescapeHtml, safeScript, safeJson, block, getBlock, stripTag, BRAND_POSITIONS,
+  BUILTIN_THEMES_DIR, findThemeFile,
 } from './deckfile.mjs';
+import { readThemes } from './themes.mjs';
 
 export function isMapHtml(html) {
   return /<meta name="generator" content="jh-presentation[^"]*"/.test(html) && /<meta name="jh-kind" content="map"/.test(html);
@@ -32,6 +36,21 @@ function mapText(map) {
 function mapStyle() {
   return `<style>\n@layer components {\n${readPkg('components', 'components.css')}\n${readPkg('components', 'diagrams.css')}\n${readPkg('components', 'mapdoc.css')}\n}\n</style>`;
 }
+/**
+ * テーマ: 土台 (default) に加えて、同梱テーマ全部 (と指定の自作テーマ) を候補として埋め込む。
+ * 指定のテーマ以外は media="not all" で止めておき、ビューアのテーマ選択で切り替える (mapdoc.js)
+ */
+function mapThemeStyle(theme, themeDirs) {
+  const file = findThemeFile(theme, themeDirs);
+  if (theme !== 'default' && !file) throw new Error(`テーマがありません: ${theme}`);
+  const list = readThemes(BUILTIN_THEMES_DIR);
+  if (!list.some((t) => t.name === theme)) list.push(readThemes(path.dirname(file)).find((t) => t.name === theme));
+  const styles = list.map((t) => {
+    const css = t.name === 'default' ? '' : `@layer theme {\n${fs.readFileSync(findThemeFile(t.name, themeDirs), 'utf8')}\n}`;
+    return `<style data-jh-theme="${escapeHtml(t.name)}" data-label="${escapeHtml(t.label)}"${t.name === theme ? '' : ' media="not all"'}>\n${css}\n</style>`;
+  });
+  return `<style>\n@layer theme-base {\n${readPkg('themes', 'default.css')}\n}\n</style>\n${styles.join('\n')}`;
+}
 function mapScript() {
   return `<script>\n${safeScript(readPkg('components', 'mapdoc.js'))}\n${safeScript(readPkg('components', 'diagrams.js'))}\nJhMap.start();\n</script>`;
 }
@@ -48,7 +67,7 @@ export function buildMap(doc, ctx = {}, keep = {}) {
   const gen = {
     version: keep.version || version(),
     engineStyle: keep.engineStyle || mapStyle(),
-    themeStyle: keep.themeStyle || `<style>\n${themeCss(theme, ctx.themeDirs)}\n</style>`,
+    themeStyle: keep.themeStyle || mapThemeStyle(theme, ctx.themeDirs),
     brand: keep.brand || `<script type="application/json" id="jh-brand">${safeJson({ name: b.name || '', label: b.label || '', logo: b.logo || '' })}</script>`,
     engineScript: keep.engineScript || mapScript(),
   };
@@ -62,7 +81,7 @@ export function buildMap(doc, ctx = {}, keep = {}) {
 <meta name="jh-theme" content="${escapeHtml(theme)}">
 <meta name="jh-brand" content="${brand}">
 <title>${escapeHtml(doc.title || 'Untitled')}</title>
-<style>@layer engine, theme-base, components, theme; html:not(.map-ready) body { visibility: hidden; }</style>
+<style>@layer engine, theme-base, components, theme; html:not(.map-ready) body { visibility: hidden; } @page { size: A4 landscape; margin: 12mm; }</style>
 </head>
 <body class="jh-mapdoc" data-brand="${brand}">
 <!--

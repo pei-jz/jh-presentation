@@ -31,7 +31,7 @@ body.jh-mapdoc {
 .jh-map-title { margin: 0; font-family: var(--font-heading); font-size: 19px; font-weight: 700; color: var(--fg); }
 .jh-map-label { padding: 1px 8px; border: 1px solid var(--accent); border-radius: 999px; font-size: 12px; color: var(--accent); }
 .jh-map-tools { display: flex; align-items: center; gap: 8px; margin-left: auto; }
-.jh-map-btn, .jh-map-data, .jh-map-search input {
+.jh-map-btn, .jh-map-data, .jh-map-theme, .jh-map-search input {
   height: 34px;
   padding: 0 12px;
   border: 1px solid var(--border);
@@ -43,7 +43,8 @@ body.jh-mapdoc {
 }
 .jh-map-btn { cursor: pointer; white-space: nowrap; }
 .jh-map-btn:hover { border-color: var(--accent); color: var(--accent); }
-.jh-map-toc-toggle { display: none; }
+.jh-map-toc-toggle { padding: 0 10px; font-size: 16px; }
+.jh-map-theme { max-width: 190px; }
 .jh-map-search { position: relative; }
 .jh-map-search input { width: 240px; }
 .jh-map-search input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
@@ -81,13 +82,55 @@ body.jh-mapdoc {
 .jh-map-noresult { padding: 8px 10px; color: var(--muted); }
 
 /* ---- 目次と図 ---------------------------------------------------------- */
-.jh-map-main { display: grid; grid-template-columns: 260px 1fr; min-height: 0; }
-.jh-map-toc { overflow: auto; padding: 12px 8px; border-right: 1px solid var(--border); background: var(--surface); }
+.jh-map-main { display: grid; grid-template-columns: 260px 1fr; min-height: 0; transition: grid-template-columns .2s ease; }
+.jh-map-toc { overflow: auto; padding: 8px 8px 12px; border-right: 1px solid var(--border); background: var(--surface); }
+/* 広い画面で ☰ を押すと目次を畳む (状態は保存される) */
+body.jh-toc-collapsed .jh-map-main { grid-template-columns: 0 1fr; }
+body.jh-toc-collapsed .jh-map-toc { visibility: hidden; padding: 0; border: 0; }
 .jh-map-toc ul { margin: 0; padding: 0; list-style: none; }
+.jh-map-toc li { position: relative; }
+.jh-map-toc li[hidden] { display: none; }
+.jh-toc-tools { display: flex; justify-content: flex-end; gap: 4px; margin: 0 0 6px; }
+.jh-toc-tool {
+  padding: 2px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--muted);
+  background: none;
+  cursor: pointer;
+}
+.jh-toc-tool:hover { border-color: var(--border); color: var(--accent); }
+/* 枝の開閉 (三角)。字下げの余白の中に置く */
+.jh-toc-twisty {
+  position: absolute;
+  top: 3px;
+  left: calc(var(--depth, 0) * 16px - 8px);
+  z-index: 1;
+  width: 20px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  color: var(--muted);
+  background: none;
+  cursor: pointer;
+}
+.jh-toc-twisty::before {
+  content: "";
+  display: inline-block;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-left: 7px solid currentColor;
+  transition: transform .15s;
+}
+.jh-toc-twisty[aria-expanded="true"]::before { transform: rotate(90deg); }
+.jh-toc-twisty:hover { color: var(--accent); background: var(--accent-soft); }
 .jh-toc-item {
   display: block;
   width: 100%;
-  padding: 5px 10px 5px calc(10px + var(--depth, 0) * 16px);
+  padding: 5px 10px 5px calc(14px + var(--depth, 0) * 16px);
   border: 0;
   border-radius: 6px;
   font: inherit;
@@ -141,7 +184,8 @@ body.jh-mapdoc {
   .jh-map-main { grid-template-columns: 1fr; }
   .jh-map-toc { position: fixed; top: 0; bottom: 0; left: 0; z-index: 30; width: 260px; transform: translateX(-100%); visibility: hidden; transition: transform .2s, visibility .2s; }
   body.jh-toc-open .jh-map-toc { transform: none; visibility: visible; box-shadow: 8px 0 24px rgba(0, 0, 0, .18); }
-  .jh-map-toc-toggle { display: inline-block; }
+  body.jh-toc-collapsed .jh-map-main { grid-template-columns: 1fr; }
+  body.jh-toc-collapsed .jh-map-toc { padding: 8px 8px 12px; border-right: 1px solid var(--border); }
   .jh-map-head { flex-wrap: wrap; gap: 8px 10px; padding: 8px 12px; }
   .jh-map-title { flex: 1; min-width: 0; font-size: 16px; }
   .jh-map-tools { width: 100%; margin-left: 0; }
@@ -149,11 +193,12 @@ body.jh-mapdoc {
   .jh-map-search input { width: 100%; box-sizing: border-box; }
   .jh-map-results { left: 0; width: auto; }
   .jh-map-data { max-width: 40%; }
+  .jh-map-theme { max-width: 30%; }
   .jh-mapdoc .dg-panel { width: 100%; top: auto; height: 55%; border-width: 1px 0 0; }
 }
 
-/* ---- 印刷 (?print): 階層ごとに 1 ページ ------------------------------------ */
-@page { size: A4 landscape; margin: 12mm; }
+/* ---- 印刷 (?print・印刷ボタン・Ctrl+P): 階層ごとに 1 ページ ----------------------
+ * @page は @layer の中に書けないので mapfile.mjs が <head> に置く (A4 横) */
 body.jh-map-printing { display: block; height: auto; overflow: visible; }
 body.jh-map-printing .jh-map-main { display: none; }
 .jh-map-print { padding: 0 18px; }
@@ -172,6 +217,7 @@ body.jh-map-printing .jh-map-main { display: none; }
 .jh-print-more { display: block; font-size: 11px; font-weight: 400; color: var(--muted); }
 @media print {
   .jh-map-head { border: 0; background: none; }
+  .jh-map-tools, .jh-map-toc-toggle { display: none; }
 }
 .jh-mapdoc .dg-panel .table { font-size: 13px; }
 .jh-mapdoc .dg-panel .table th, .jh-mapdoc .dg-panel .table td { padding: 4px 6px; border-bottom-width: 1px; }
